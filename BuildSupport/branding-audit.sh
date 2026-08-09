@@ -4,6 +4,11 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT_DIR"
 
+if ! command -v rg >/dev/null 2>&1; then
+  printf 'ERROR required-tool=rg missing; install ripgrep before running %s\n' "$0" >&2
+  exit 127
+fi
+
 OUTPUT_FILE="$ROOT_DIR/.build/branding-audit-output.txt"
 mkdir -p "$(dirname "$OUTPUT_FILE")"
 : >"$OUTPUT_FILE"
