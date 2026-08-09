@@ -1,0 +1,40 @@
+name: Feature request
+description: Propose a change that fits the project's documented boundaries
+title: "[Feature] "
+labels:
+  - enhancement
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: User problem
+      description: Describe the workflow problem without prescribing an implementation.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed outcome
+      description: State the observable user-facing result.
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Include existing macOS behavior or smaller solutions.
+    validations:
+      required: true
+  - type: checkboxes
+    id: boundaries
+    attributes:
+      label: Project boundaries
+      options:
+        - label: The proposal does not require telemetry, accounts, or an app-owned network service.
+          required: true
+        - label: The proposal does not introduce permanent deletion or silent replacement.
+          required: true
+        - label: The proposal avoids polling and hidden-panel background work.
+          required: true
+        - label: I reviewed ROADMAP.md and the documented non-goals.
+          required: true

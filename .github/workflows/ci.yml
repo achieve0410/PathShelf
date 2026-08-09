@@ -1,0 +1,38 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  macos:
+    runs-on: macos-15
+    timeout-minutes: 30
+    steps:
+      - name: Check out source
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - name: Branding audit
+        run: bash BuildSupport/branding-audit.sh
+      - name: Build
+        run: swift build --arch arm64
+      - name: Contract tests
+        run: bash BuildSupport/test.sh
+      - name: App bundle
+        run: bash BuildSupport/build-app.sh
+      - name: Smoke
+        run: bash BuildSupport/smoke-launch.sh
+      - name: Release audit
+        run: bash BuildSupport/release-audit.sh
+      - name: Idle audit harness
+        run: bash BuildSupport/idle-audit.sh ci
+      - name: Open-source readiness audit
+        run: bash BuildSupport/oss-readiness-audit.sh

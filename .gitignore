@@ -1,0 +1,21 @@
+.DS_Store
+.build/
+.swiftpm/
+DerivedData/
+*.xcuserstate
+xcuserdata/
+
+# Local environments and release signing material
+.env*
+!.env.example
+*.p12
+*.pfx
+*.mobileprovision
+*.private.xcconfig
+
+# Local agent/session artifacts
+.gjc/
+.omo/
+.omx/
+next-step.md
+session-handoff.md
