@@ -27,9 +27,17 @@ change solely because an AI review or test suite reports success.
 
 ## Release maintenance
 
-Releases follow `docs/RELEASING.md`. Maintainers record exact gate results,
-hardware-sensitive measurements, signing state, known limitations, and
-checksums. Failed gates remain visible until corrected; they are not waived.
+Releases follow `docs/RELEASING.md`. For every release, maintainers record the
+exact tagged revision, CI result, release type, and known limitations.
+
+For a source-only release, record the generated source archives and verified
+build, app-bundle, test, and smoke commands. Signing, notarization, installation
+checks, hardware-sensitive measurements, and binary checksums are not
+applicable when no binary is distributed.
+
+For a binary release, additionally record hardware-sensitive measurements,
+signing and notarization state, clean-machine launch evidence, and checksums.
+Failed applicable gates remain visible until corrected; they are not waived.
 
 ## Security maintenance
 

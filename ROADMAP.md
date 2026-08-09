@@ -3,19 +3,22 @@
 This roadmap communicates priorities; it is not a promise of dates or specific
 features. Accepted work still requires an issue, review, and passing checks.
 
-## Now: first public release
+## Current: v0.1.0 source release
 
-- Finish the current AppShell source decomposition without behavior changes.
-- Publish a clean public repository and enable private vulnerability reporting.
-- Complete release signing and notarization decisions.
-- Produce a verifiable `v0.1.0` release with checksums and release notes.
-- Validate the full release, network, performance, and ten-minute idle audits on
-  the target hardware.
+- Publish `v0.1.0` as a source-only GitHub release with generated source
+  archives, build instructions, release notes, and green CI.
+- Keep the public repository, private vulnerability reporting, dependency
+  monitoring, and protected-main checks operational.
+- Treat the AppShell decomposition required for v0.1.0 as complete. Further
+  splitting of composition-root types is optional maintenance work.
 
 ## Next: maintenance and adoption
 
 - Triage real user feedback and document recurring support cases.
 - Improve accessibility verification with VoiceOver and high-contrast checks.
+- Decide whether to distribute a Developer ID-signed and notarized binary.
+- Before any binary performance or battery claims, validate the performance,
+  network, and ten-minute idle audits on target hardware.
 - Add release provenance and a documented reproducible packaging path.
 - Evaluate sort-order persistence after observing real-world use.
 
