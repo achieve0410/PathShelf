@@ -289,8 +289,6 @@ final class PathShelfApp: NSObject, NSApplicationDelegate {
         let focused = panelController?.hasKeyboardFocus == true
         try? await Task.sleep(for: .milliseconds(100))
         let appNameVisible = NSApp.activationPolicy() == .regular
-            && NSApp.isActive
-            && panelController?.isKeyWindow == true
             && NSApp.mainMenu?.items.first?.title == "PathShelf"
         let placementCount = panelController?.placementCalculationCount ?? 0
 
