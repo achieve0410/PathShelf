@@ -6,9 +6,9 @@ The app is intentionally local-only: no telemetry, no accounts, no update checks
 
 ## Project Status
 
-PathShelf is pre-release software. The source builds and its contract,
-smoke, network, release, and idle-audit harnesses are maintained, but no public
-binary release has been published yet.
+PathShelf v0.1.0 is the first public source release. GitHub provides the source
+archives, while users build and run the app locally; no prebuilt app binary is
+included.
 
 The project is designed as a reference-quality native utility: file operations
 default to safe outcomes, hidden-panel work is explicitly torn down, and offline
@@ -40,7 +40,12 @@ claims are backed by source, binary, and runtime checks rather than telemetry.
 
 ## Build
 
+From a fresh checkout of the release:
+
 ```sh
+git clone --branch v0.1.0 --depth 1 https://github.com/achieve0410/PathShelf.git
+cd PathShelf
+brew install ripgrep
 swift build --arch arm64
 ```
 
@@ -120,8 +125,10 @@ reporting, and baseline GitHub Actions hardening.
 ## Known Limits
 
 - Full Finder replacement is not the goal.
-- Developer ID signing, notarization, and a public release are not yet complete.
-- Hardware battery validation and the 10-minute release idle audit must be run on the target Mac before release claims.
+- v0.1.0 is source-only; no Developer ID-signed or notarized app binary is
+  provided.
+- Hardware battery validation and the 10-minute release idle audit must be run
+  on target hardware before making binary performance or battery claims.
 - The default CI workflow does not gate hardware-sensitive performance numbers or the 10-minute idle mode.
 - App Store distribution, telemetry, backend sync, permanent delete, Accessibility permission, and third-party dependencies are out of scope.
 

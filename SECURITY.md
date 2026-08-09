@@ -2,9 +2,13 @@
 
 ## Supported Versions
 
-PathShelf is currently pre-release. Security fixes target the latest
-revision on the default branch for macOS 15+ on Apple Silicon. A version support
-table will be added with the first public release.
+Security fixes target the latest v0.1.x release and the latest revision on the
+default branch for macOS 15+ on Apple Silicon.
+
+| Version | Supported |
+| --- | --- |
+| 0.1.x | Yes |
+| Earlier revisions | No |
 
 ## Private Reporting
 

@@ -1,10 +1,14 @@
 # Changelog
 
 All notable user-facing and maintainer-facing changes are recorded here.
-PathShelf follows [Semantic Versioning](https://semver.org/) once a
-public release is published.
+PathShelf follows [Semantic Versioning](https://semver.org/) for public
+releases.
 
 ## Unreleased
+
+No changes yet.
+
+## [0.1.0] - 2026-08-10
 
 ### Added
 
@@ -22,7 +26,4 @@ public release is published.
 
 - Internal planning and agent-session artifacts from the public source surface.
 
-## Release history
-
-No public release has been published yet. The first release will be documented
-here only after its tag and artifacts are publicly verifiable.
+[0.1.0]: https://github.com/achieve0410/PathShelf/releases/tag/v0.1.0
