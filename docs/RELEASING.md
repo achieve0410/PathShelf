@@ -8,6 +8,7 @@ verified publicly.
 
 - A clean revision reviewed through the repository's pull-request process.
 - Apple Silicon hardware running macOS 15 or later.
+- `ripgrep` available for static policy and readiness audits.
 - A public repository remote controlled by the releasing maintainer.
 - For distributable binaries, an approved Developer ID identity and notarization
   credentials. Do not store those credentials in the repository.

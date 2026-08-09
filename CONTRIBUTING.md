@@ -22,6 +22,7 @@ network, or distribution changes require an accepted design issue first.
 Build on an Apple Silicon Mac running macOS 15 or later:
 
 ```sh
+brew install ripgrep
 swift build --arch arm64
 ```
 
@@ -33,6 +34,7 @@ instead of tests that pin prose.
 ## Required Checks
 
 ```sh
+bash BuildSupport/branding-audit.sh
 swift build --arch arm64
 bash BuildSupport/test.sh
 bash BuildSupport/build-app.sh

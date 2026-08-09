@@ -4,6 +4,11 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT_DIR"
 
+if ! command -v rg >/dev/null 2>&1; then
+  printf 'ERROR required-tool=rg missing; install ripgrep before running %s\n' "$0" >&2
+  exit 127
+fi
+
 OUTPUT_FILE="$ROOT_DIR/.build/oss-readiness-audit-output.txt"
 mkdir -p "$(dirname "$OUTPUT_FILE")"
 : >"$OUTPUT_FILE"
@@ -115,7 +120,7 @@ fi
 if rg -U 'permissions:\n  contents: read' .github/workflows/ci.yml >/dev/null \
   && rg -F 'concurrency:' .github/workflows/ci.yml >/dev/null \
   && rg -F 'timeout-minutes:' .github/workflows/ci.yml >/dev/null \
-  && rg -F 'actions/checkout@11d5960a326750d5838078e36cf38b85af677262' \
+  && rg '^[[:space:]]*uses:[[:space:]]*actions/checkout@[0-9a-fA-F]{40}[[:space:]]*$' \
     .github/workflows/ci.yml >/dev/null; then
   pass "ci-hardening=present"
 else

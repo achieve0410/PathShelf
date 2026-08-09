@@ -35,6 +35,7 @@ claims are backed by source, binary, and runtime checks rather than telemetry.
 - macOS 15 or later
 - Apple Silicon (`arm64`)
 - Swift Package Manager
+- [ripgrep](https://github.com/BurntSushi/ripgrep) for local tests and audits
 - MIT license
 
 ## Build
