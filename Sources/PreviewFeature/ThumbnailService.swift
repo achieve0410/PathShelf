@@ -21,9 +21,10 @@ public struct ThumbnailRequest: Equatable, Sendable {
     }
 }
 
-public struct ThumbnailResult: Sendable {
-    public var requestID: UUID
-    public var image: NSImage
+// Quick Look creates the image once; AppShell consumes it on MainActor.
+public struct ThumbnailResult: @unchecked Sendable {
+    public let requestID: UUID
+    public let image: NSImage
 
     public init(requestID: UUID, image: NSImage) {
         self.requestID = requestID
