@@ -91,6 +91,8 @@ public struct SettingsTransferManifest: Codable, Equatable, Sendable {
 
 public enum SettingsTransferError: Error, Equatable, Sendable {
     case invalidDocument
+    case documentTooLarge
+    case resourceLimitExceeded
     case unsupportedFormat
     case unsupportedVersion(Int)
     case invalidProducerVersion
@@ -106,6 +108,14 @@ public enum SettingsTransferError: Error, Equatable, Sendable {
 }
 
 public struct SettingsTransferCodec: Sendable {
+    public static let maximumDocumentByteCount = 16 * 1_024 * 1_024
+
+    private static let maximumFavoriteGroupCount = 256
+    private static let maximumSavedLocationCount = 1_024
+    private static let maximumTextByteCount = 4_096
+    private static let maximumBookmarkByteCount = 1_024 * 1_024
+    private static let maximumTotalBookmarkByteCount = 8 * 1_024 * 1_024
+
     private struct Header: Decodable {
         var format: String
         var schemaVersion: Int
@@ -136,6 +146,9 @@ public struct SettingsTransferCodec: Sendable {
     }
 
     public func decode(_ data: Data) throws -> SettingsTransferManifest {
+        guard data.count <= Self.maximumDocumentByteCount else {
+            throw SettingsTransferError.documentTooLarge
+        }
         let decoder = JSONDecoder()
         guard let header = try? decoder.decode(Header.self, from: data) else {
             throw SettingsTransferError.invalidDocument
@@ -158,6 +171,10 @@ public struct SettingsTransferCodec: Sendable {
     private func validatedAndSorted(
         _ manifest: SettingsTransferManifest
     ) throws -> SettingsTransferManifest {
+        guard manifest.favoriteGroups.count <= Self.maximumFavoriteGroupCount,
+              manifest.savedLocations.count <= Self.maximumSavedLocationCount else {
+            throw SettingsTransferError.resourceLimitExceeded
+        }
         guard manifest.format == SettingsTransferManifest.formatIdentifier else {
             throw SettingsTransferError.unsupportedFormat
         }
@@ -167,6 +184,10 @@ public struct SettingsTransferCodec: Sendable {
         guard manifest.producerVersion.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false else {
             throw SettingsTransferError.invalidProducerVersion
         }
+        guard isBoundedText(manifest.producerVersion),
+              manifest.settings.defaultLocationPath.map(isBoundedText) ?? true else {
+            throw SettingsTransferError.resourceLimitExceeded
+        }
         if let defaultPath = manifest.settings.defaultLocationPath,
            normalizedPath(defaultPath) == nil {
             throw SettingsTransferError.invalidPath(defaultPath)
@@ -175,6 +196,10 @@ public struct SettingsTransferCodec: Sendable {
         var groupIDs = Set<UUID>()
         var groupSortOrders = Set<Int>()
         for group in manifest.favoriteGroups {
+            guard isBoundedText(group.name),
+                  group.iconName.map(isBoundedText) ?? true else {
+                throw SettingsTransferError.resourceLimitExceeded
+            }
             guard group.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false else {
                 throw SettingsTransferError.emptyGroupName(group.id)
             }
@@ -192,7 +217,17 @@ public struct SettingsTransferCodec: Sendable {
         var locationIDs = Set<UUID>()
         var paths = Set<String>()
         var locationSortOrders: [UUID?: Set<Int>] = [:]
+        var totalBookmarkByteCount = 0
         for location in manifest.savedLocations {
+            guard isBoundedText(location.displayName),
+                  isBoundedText(location.bookmark.originalPath),
+                  location.bookmark.data.count <= Self.maximumBookmarkByteCount else {
+                throw SettingsTransferError.resourceLimitExceeded
+            }
+            totalBookmarkByteCount += location.bookmark.data.count
+            guard totalBookmarkByteCount <= Self.maximumTotalBookmarkByteCount else {
+                throw SettingsTransferError.resourceLimitExceeded
+            }
             guard locationIDs.insert(location.id).inserted else {
                 throw SettingsTransferError.duplicateLocationID(location.id)
             }
@@ -225,6 +260,10 @@ public struct SettingsTransferCodec: Sendable {
             ($0.sortOrder, $0.id.uuidString) < ($1.sortOrder, $1.id.uuidString)
         }
         return sorted
+    }
+
+    private func isBoundedText(_ text: String) -> Bool {
+        text.utf8.count <= Self.maximumTextByteCount
     }
 
     private func normalizedPath(_ path: String) -> String? {

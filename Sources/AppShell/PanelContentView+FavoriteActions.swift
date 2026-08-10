@@ -225,22 +225,30 @@ extension PanelContentView {
 
     func reauthorizeSelectedOrFirstUnavailableFavorite() async -> Bool {
         await awaitInitialLoad()
-        let selectedID: UUID? = {
-            let row = sidebarTable.selectedRow
-            let items = sidebarDataSource.visibleItems
-            guard items.indices.contains(row), case .location(let location) = items[row] else {
-                return nil
-            }
-            return location.id
-        }()
-        guard let id = selectedID ?? model.savedLocations.first(where: {
-            ExternalLocationStateResolver.isUsable($0.availability) == false
-        })?.id else {
+        guard let id = Self.reauthorizationTargetID(
+            selectedRow: sidebarTable.selectedRow,
+            visibleItems: sidebarDataSource.visibleItems,
+            savedLocations: model.savedLocations
+        ) else {
             showStatus("No Favorite needs folder access.")
             return false
         }
         presentReauthorizationPanel(for: id)
         return true
+    }
+
+    static func reauthorizationTargetID(
+        selectedRow: Int,
+        visibleItems: [FavoriteSidebarItem],
+        savedLocations: [SavedLocation]
+    ) -> UUID? {
+        if visibleItems.indices.contains(selectedRow),
+           case .location(let location) = visibleItems[selectedRow] {
+            return location.id
+        }
+        return savedLocations.first(where: {
+            ExternalLocationStateResolver.isUsable($0.availability) == false
+        })?.id
     }
 
     @objc func reauthorizeSavedLocation(_ sender: Any?) {

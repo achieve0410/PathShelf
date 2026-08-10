@@ -27,6 +27,11 @@ public enum SettingsTransferCoordinatorError: Error, Equatable, Sendable {
 }
 
 public final class SettingsTransferCoordinator: @unchecked Sendable {
+    private struct ResolvedImport {
+        var location: SavedLocation
+        var canonicalPath: String?
+    }
+
     private struct StoreRollbackError: Error, CustomStringConvertible {
         var failures: [String]
 
@@ -86,20 +91,34 @@ public final class SettingsTransferCoordinator: @unchecked Sendable {
         }
         if let defaultPath = manifest.settings.defaultLocationPath {
             var isDirectory: ObjCBool = false
-            if FileManager.default.fileExists(atPath: defaultPath, isDirectory: &isDirectory) {
-                do {
-                    guard isDirectory.boolValue else {
-                        return .failure(.transfer(.invalidPath(defaultPath)))
-                    }
-                    try navigationPolicy.validateSavedLocation(
-                        URL(fileURLWithPath: defaultPath, isDirectory: true)
-                    )
-                } catch {
+            do {
+                try navigationPolicy.validateImportedDeclaredPath(defaultPath)
+                if FileManager.default.fileExists(
+                    atPath: defaultPath,
+                    isDirectory: &isDirectory
+                ), isDirectory.boolValue == false {
                     return .failure(.transfer(.invalidPath(defaultPath)))
                 }
+            } catch {
+                return .failure(.transfer(.invalidPath(defaultPath)))
             }
         }
-        let importedLocations = manifest.savedLocations.map(resolveImportedLocation)
+        let resolvedImports: [ResolvedImport]
+        do {
+            resolvedImports = try manifest.savedLocations.map(resolveImportedLocation)
+        } catch let error as SettingsTransferError {
+            return .failure(.transfer(error))
+        } catch {
+            return .failure(.store(String(describing: error)))
+        }
+        var canonicalPaths = Set<String>()
+        for resolvedImport in resolvedImports {
+            if let canonicalPath = resolvedImport.canonicalPath,
+               canonicalPaths.insert(canonicalPath).inserted == false {
+                return .failure(.transfer(.duplicatePath(canonicalPath)))
+            }
+        }
+        let importedLocations = resolvedImports.map(\.location)
         return .success(
             SettingsTransferImportResult(
                 settings: manifest.settings.appSettings,
@@ -162,12 +181,42 @@ public final class SettingsTransferCoordinator: @unchecked Sendable {
         }
     }
 
-    private func resolveImportedLocation(_ transfer: TransferSavedLocation) -> SavedLocation {
+    private func resolveImportedLocation(
+        _ transfer: TransferSavedLocation
+    ) throws -> ResolvedImport {
+        do {
+            try navigationPolicy.validateImportedDeclaredPath(
+                transfer.bookmark.originalPath
+            )
+        } catch {
+            throw SettingsTransferError.invalidPath(transfer.bookmark.originalPath)
+        }
         let rawResolution = bookmarkService.resolve(transfer.bookmark)
         defer {
             rawResolution.scopedURL?.close()
         }
-        let resolution = policyValidatedResolution(rawResolution, transfer: transfer)
+        if let scopedURL = rawResolution.scopedURL {
+            do {
+                try navigationPolicy.validateResolvedBookmarkURL(
+                    scopedURL.url,
+                    declaredPath: transfer.bookmark.originalPath
+                )
+                var isDirectory: ObjCBool = false
+                guard FileManager.default.fileExists(
+                    atPath: scopedURL.url.path,
+                    isDirectory: &isDirectory
+                ), isDirectory.boolValue else {
+                    throw SettingsTransferError.invalidPath(
+                        transfer.bookmark.originalPath
+                    )
+                }
+            } catch {
+                throw SettingsTransferError.invalidPath(
+                    transfer.bookmark.originalPath
+                )
+            }
+        }
+        let resolution = rawResolution
         let metadata = resolution.scopedURL.map {
             locationProbe.metadata(for: $0.url)
         }
@@ -178,30 +227,11 @@ public final class SettingsTransferCoordinator: @unchecked Sendable {
             lastKnownExternalKind: transfer.lastKnownExternalKind,
             markRecovered: false
         )
-        return transfer.savedLocation(availability: availability)
-    }
-
-    private func policyValidatedResolution(
-        _ resolution: BookmarkResolution,
-        transfer: TransferSavedLocation
-    ) -> BookmarkResolution {
-        guard let scopedURL = resolution.scopedURL else {
-            return resolution
-        }
-        do {
-            try navigationPolicy.validateResolvedBookmarkURL(
-                scopedURL.url,
-                declaredPath: transfer.bookmark.originalPath
-            )
-            return resolution
-        } catch {
-            return BookmarkResolution(
-                scopedURL: nil,
-                originalPath: transfer.bookmark.originalPath,
-                isStale: false,
-                availability: .permissionDenied,
-                error: .permissionDenied(originalPath: transfer.bookmark.originalPath)
-            )
-        }
+        return ResolvedImport(
+            location: transfer.savedLocation(availability: availability),
+            canonicalPath: resolution.scopedURL?.url
+                .resolvingSymlinksInPath()
+                .standardizedFileURL.path
+        )
     }
 }

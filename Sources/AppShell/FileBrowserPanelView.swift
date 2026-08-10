@@ -5,6 +5,11 @@ import PanelFeature
 import PreviewFeature
 import SettingsFeature
 
+struct KeyboardReauthorizationProbeResult {
+    var targetingReady: Bool
+    var preservesBrowserState: Bool
+}
+
 @MainActor
 final class PanelContentView: NSView, NSMenuItemValidation {
     static let favoriteGroupIconChoices: [(title: String, symbol: String)] = [
@@ -133,19 +138,45 @@ final class PanelContentView: NSView, NSMenuItemValidation {
         await loadTask?.value
     }
 
-    func runKeyboardReauthorizationStateProbe(in directoryURL: URL) async -> Bool {
+    func runKeyboardReauthorizationStateProbe(
+        in directoryURL: URL
+    ) async -> KeyboardReauthorizationProbeResult {
         let originalDirectory = model.currentDirectoryURL
         await model.navigateToPathBarLocation(directoryURL)
         let directoryBefore = model.currentDirectoryURL.standardizedFileURL
         guard directoryBefore == directoryURL.standardizedFileURL else {
-            return false
+            return KeyboardReauthorizationProbeResult(
+                targetingReady: false,
+                preservesBrowserState: false
+            )
         }
-        _ = await reauthorizeSelectedOrFirstUnavailableFavorite()
+        let probeID = UUID()
+        let targetingReady = Self.reauthorizationTargetID(
+            selectedRow: -1,
+            visibleItems: [],
+            savedLocations: [
+                SavedLocation(
+                    id: probeID,
+                    displayName: "Needs Access",
+                    bookmark: PersistedBookmark(
+                        data: Data([0x00]),
+                        originalPath: "/Users/old-user/Missing",
+                        isSecurityScoped: true
+                    ),
+                    sortOrder: 0,
+                    availability: .permissionDenied
+                )
+            ]
+        ) == probeID
+        await awaitInitialLoad()
         let preserved = model.currentDirectoryURL.standardizedFileURL == directoryBefore
         await model.navigateToPathBarLocation(originalDirectory)
-        return preserved
-            && model.currentDirectoryURL.standardizedFileURL
-                == originalDirectory.standardizedFileURL
+        return KeyboardReauthorizationProbeResult(
+            targetingReady: targetingReady,
+            preservesBrowserState: preserved
+                && model.currentDirectoryURL.standardizedFileURL
+                    == originalDirectory.standardizedFileURL
+        )
     }
 
     func resumeCachedInteractive() -> BrowserSnapshot {

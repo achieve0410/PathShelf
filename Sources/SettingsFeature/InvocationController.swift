@@ -115,6 +115,7 @@ public final class InvocationController: @unchecked Sendable {
     ) -> Result<Void, ImportedSettingsCommitError> {
         let previous = settings
         let previousBinding = hotKeyController.activeBinding
+        let previousLaunchStatus = launchAtLoginController.status
         let shortcutChanged = previousBinding != candidate.shortcut
         var launchChanged = false
 
@@ -122,12 +123,14 @@ public final class InvocationController: @unchecked Sendable {
             var failures: [String] = []
 
             if launchChanged {
-                switch launchAtLoginController.apply(enabled: previous.launchAtLogin) {
+                let previousLaunchEnabled = previousLaunchStatus == .enabled
+                    || previousLaunchStatus == .requiresApproval
+                switch launchAtLoginController.apply(enabled: previousLaunchEnabled) {
                 case .success(let status):
-                    let acceptedNotFound = previous.launchAtLogin == false && status == .notFound
+                    let acceptedNotFound = previousLaunchEnabled == false && status == .notFound
                     if Self.isSuccessfulLaunchStatus(
                         status,
-                        requestedEnabled: previous.launchAtLogin
+                        requestedEnabled: previousLaunchEnabled
                     ) == false && acceptedNotFound == false {
                         failures.append("Launch-at-login rollback returned \(status.rawValue)")
                     }
@@ -167,7 +170,7 @@ public final class InvocationController: @unchecked Sendable {
             }
         }
 
-        let launchStatus = launchAtLoginController.status
+        let launchStatus = previousLaunchStatus
         let acceptedNotFound = candidate.launchAtLogin == false && launchStatus == .notFound
         if Self.isSuccessfulLaunchStatus(
             launchStatus,

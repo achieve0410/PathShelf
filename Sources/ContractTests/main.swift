@@ -18,16 +18,23 @@ struct ContractTests {
             ("settings transfer manifest validates relationships", testSettingsTransferRelationshipValidation),
             ("settings transfer manifest validates deterministic sort orders", testSettingsTransferSortOrderValidation),
             ("settings transfer manifest round-trips deterministically", testSettingsTransferRoundTrip),
+            ("settings transfer encodes shortcut modifiers canonically", testSettingsTransferModifierEncoding),
             ("settings transfer preserves case-distinct Favorite paths", testSettingsTransferCaseDistinctPaths),
             ("settings transfer manifest rejects incompatible documents", testSettingsTransferValidation),
+            ("settings transfer enforces resource limits", testSettingsTransferResourceLimits),
             ("settings transfer rejects protected default locations", testSettingsTransferProtectedDefaultLocation),
-            ("settings transfer downgrades escaped bookmark destinations", testSettingsTransferEscapedBookmark),
+            ("settings transfer rejects unresolved protected Favorites", testSettingsTransferUnresolvedProtectedFavorite),
+            ("settings transfer rejects escaped bookmark destinations", testSettingsTransferEscapedBookmark),
+            ("settings transfer rejects regular-file bookmark destinations", testSettingsTransferRegularFileBookmark),
+            ("settings transfer rejects canonical duplicate Favorites", testSettingsTransferCanonicalDuplicateFavorite),
             ("settings transfer import replaces all stores", testSettingsTransferImport),
             ("settings transfer preview makes no writes", testSettingsTransferPreview),
             ("settings transfer import rolls back all stores", testSettingsTransferImportRollback),
             ("settings transfer import rejects shortcut conflicts before writes", testSettingsTransferShortcutConflict),
             ("settings transfer import rejects unavailable launch-at-login", testSettingsTransferLaunchUnavailable),
             ("settings transfer import surfaces rollback failure", testSettingsTransferRollbackFailure),
+            ("settings transfer rollback restores disabled launch runtime", testSettingsTransferRollbackRestoresDisabledLaunchRuntime),
+            ("settings transfer rollback restores enabled launch runtime", testSettingsTransferRollbackRestoresEnabledLaunchRuntime),
             ("browser display preferences round-trip and default safely", testBrowserDisplayPreferences),
             ("missing settings file throws explicit error", testMissingSettingsIsExplicit),
             ("default shortcut contains Command or Control", testDefaultShortcutValidation),
@@ -268,6 +275,31 @@ struct ContractTests {
         try expect(String(decoding: data, as: UTF8.self).contains("\"availability\"") == false)
     }
 
+    private static func testSettingsTransferModifierEncoding() throws {
+        let codec = SettingsTransferCodec()
+        let settings = AppSettings(
+            shortcut: ShortcutBinding(
+                keyCode: 12,
+                modifiers: Set(ShortcutBinding.Modifier.allCases)
+            )
+        )
+        let manifest = try codec.makeManifest(
+            settings: settings,
+            favoriteGroups: [],
+            savedLocations: [],
+            producerVersion: "0.1.0"
+        )
+        let data = try codec.encode(manifest)
+        let document = try JSONSerialization.jsonObject(with: data) as? [String: Any]
+        let encodedSettings = document?["settings"] as? [String: Any]
+        let encodedShortcut = encodedSettings?["shortcut"] as? [String: Any]
+        let encodedModifiers = encodedShortcut?["modifiers"] as? [String]
+
+        try expect(
+            encodedModifiers == ShortcutBinding.Modifier.allCases.map(\.rawValue)
+        )
+    }
+
     private static func testSettingsTransferRelationshipValidation() throws {
         let codec = SettingsTransferCodec()
         let settings = SettingsTransferSettings(settings: .default)
@@ -443,8 +475,75 @@ struct ContractTests {
         }
     }
 
+    private static func testSettingsTransferResourceLimits() throws {
+        let codec = SettingsTransferCodec()
+        let fixture = try transferFixture(settings: .default)
+
+        var oversizedDocument = fixture.data
+        oversizedDocument.append(
+            Data(repeating: 0x20, count: 16 * 1_024 * 1_024)
+        )
+        var oversizedDocumentRejected = false
+        do {
+            _ = try codec.decode(oversizedDocument)
+        } catch {
+            oversizedDocumentRejected = true
+        }
+        try expect(oversizedDocumentRejected)
+
+        let tooManyGroups = (0...256).map {
+            FavoriteGroup(name: "Group \($0)", sortOrder: $0)
+        }
+        var groupCountRejected = false
+        do {
+            _ = try codec.makeManifest(
+                settings: .default,
+                favoriteGroups: tooManyGroups,
+                savedLocations: [],
+                producerVersion: "0.1.0"
+            )
+        } catch {
+            groupCountRejected = true
+        }
+        try expect(groupCountRejected)
+
+        var oversizedBookmark = fixture.locations[0]
+        oversizedBookmark.bookmark.data = Data(
+            repeating: 0x01,
+            count: 1_024 * 1_024 + 1
+        )
+        var bookmarkRejected = false
+        do {
+            _ = try codec.makeManifest(
+                settings: .default,
+                favoriteGroups: fixture.groups,
+                savedLocations: [oversizedBookmark],
+                producerVersion: "0.1.0"
+            )
+        } catch {
+            bookmarkRejected = true
+        }
+        try expect(bookmarkRejected)
+
+        var oversizedName = fixture.locations[0]
+        oversizedName.displayName = String(repeating: "a", count: 4_097)
+        var textRejected = false
+        do {
+            _ = try codec.makeManifest(
+                settings: .default,
+                favoriteGroups: fixture.groups,
+                savedLocations: [oversizedName],
+                producerVersion: "0.1.0"
+            )
+        } catch {
+            textRejected = true
+        }
+        try expect(textRejected)
+    }
+
     private static func testSettingsTransferProtectedDefaultLocation() throws {
-        let candidate = AppSettings(defaultLocationPath: "/private")
+        let path = "/System/PathShelf-Missing"
+        let candidate = AppSettings(defaultLocationPath: path)
         let fixture = try transferFixture(settings: candidate)
         let settingsStore = FakeSettingsStore(initial: .default)
         let invocation = InvocationController(
@@ -460,7 +559,38 @@ struct ContractTests {
 
         try expect(
             coordinator.preview(fixture.data)
-                == .failure(.transfer(.invalidPath("/private")))
+                == .failure(.transfer(.invalidPath(path)))
+        )
+    }
+
+    private static func testSettingsTransferUnresolvedProtectedFavorite() throws {
+        let fixture = try transferFixture(settings: .default)
+        let path = "/System/PathShelf-Missing"
+        var location = fixture.locations[0]
+        location.bookmark.originalPath = path
+        let data = try SettingsTransferCodec().encode(
+            SettingsTransferCodec().makeManifest(
+                settings: .default,
+                favoriteGroups: fixture.groups,
+                savedLocations: [location],
+                producerVersion: "0.1.0"
+            )
+        )
+        let settingsStore = FakeSettingsStore(initial: .default)
+        let invocation = InvocationController(
+            settingsStore: settingsStore,
+            hotKeyController: FakeHotKeyRegistrar(activeBinding: .default)
+        )
+        invocation.loadAndRegister()
+        let coordinator = SettingsTransferCoordinator(
+            invocationController: invocation,
+            bookmarkStore: FakeBookmarkStore(initial: []),
+            favoriteGroupStore: FakeFavoriteGroupStore(initial: [])
+        )
+
+        try expect(
+            coordinator.preview(data)
+                == .failure(.transfer(.invalidPath(path)))
         )
     }
 
@@ -500,13 +630,111 @@ struct ContractTests {
             bookmarkService: bookmarkService
         )
 
-        guard case .success(let preview) = coordinator.preview(data) else {
-            throw ContractTestFailure("Expected escaped Favorite to remain importable")
-        }
-        try expect(preview.unresolvedLocationCount == 1)
         try expect(
-            ExternalLocationStateResolver.isUsable(preview.savedLocations[0].availability)
-                == false
+            coordinator.preview(data)
+                == .failure(.transfer(.invalidPath(location.bookmark.originalPath)))
+        )
+    }
+
+    private static func testSettingsTransferRegularFileBookmark() throws {
+        let directory = try TemporaryDirectory()
+        let fileURL = directory.url.appendingPathComponent("not-a-folder.txt")
+        try Data("fixture".utf8).write(to: fileURL)
+        let fixture = try transferFixture(settings: .default)
+        var location = fixture.locations[0]
+        location.bookmark.originalPath = fileURL.path
+        let data = try SettingsTransferCodec().encode(
+            SettingsTransferCodec().makeManifest(
+                settings: .default,
+                favoriteGroups: fixture.groups,
+                savedLocations: [location],
+                producerVersion: "0.1.0"
+            )
+        )
+        let bookmarkService = SecurityScopedBookmarkService(
+            resolveBookmark: { _, isStale in
+                isStale = false
+                return fileURL
+            },
+            startAccessing: { _ in true },
+            stopAccessing: { _ in },
+            fileExists: { _ in true }
+        )
+        let settingsStore = FakeSettingsStore(initial: .default)
+        let invocation = InvocationController(
+            settingsStore: settingsStore,
+            hotKeyController: FakeHotKeyRegistrar(activeBinding: .default)
+        )
+        invocation.loadAndRegister()
+        let coordinator = SettingsTransferCoordinator(
+            invocationController: invocation,
+            bookmarkStore: FakeBookmarkStore(initial: []),
+            favoriteGroupStore: FakeFavoriteGroupStore(initial: []),
+            bookmarkService: bookmarkService,
+            navigationPolicy: NavigationAccessPolicy(homeRoot: directory.url)
+        )
+
+        try expect(
+            coordinator.preview(data)
+                == .failure(.transfer(.invalidPath(fileURL.path)))
+        )
+    }
+
+    private static func testSettingsTransferCanonicalDuplicateFavorite() throws {
+        let directory = try TemporaryDirectory()
+        let destination = directory.url.appendingPathComponent("destination", isDirectory: true)
+        let alias = directory.url.appendingPathComponent("alias", isDirectory: true)
+        try FileManager.default.createDirectory(
+            at: destination,
+            withIntermediateDirectories: true
+        )
+        try FileManager.default.createSymbolicLink(
+            at: alias,
+            withDestinationURL: destination
+        )
+        let fixture = try transferFixture(settings: .default)
+        var direct = fixture.locations[0]
+        direct.bookmark.originalPath = destination.path
+        var linked = direct
+        linked.id = UUID(uuidString: "00000000-0000-0000-0000-000000000045")!
+        linked.sortOrder = direct.sortOrder + 1
+        linked.bookmark.originalPath = alias.path
+        let data = try SettingsTransferCodec().encode(
+            SettingsTransferCodec().makeManifest(
+                settings: .default,
+                favoriteGroups: fixture.groups,
+                savedLocations: [direct, linked],
+                producerVersion: "0.1.0"
+            )
+        )
+        let bookmarkService = SecurityScopedBookmarkService(
+            resolveBookmark: { bookmark, isStale in
+                isStale = false
+                return URL(fileURLWithPath: bookmark.originalPath, isDirectory: true)
+            },
+            startAccessing: { _ in true },
+            stopAccessing: { _ in },
+            fileExists: { _ in true }
+        )
+        let settingsStore = FakeSettingsStore(initial: .default)
+        let invocation = InvocationController(
+            settingsStore: settingsStore,
+            hotKeyController: FakeHotKeyRegistrar(activeBinding: .default)
+        )
+        invocation.loadAndRegister()
+        let coordinator = SettingsTransferCoordinator(
+            invocationController: invocation,
+            bookmarkStore: FakeBookmarkStore(initial: []),
+            favoriteGroupStore: FakeFavoriteGroupStore(initial: []),
+            bookmarkService: bookmarkService,
+            navigationPolicy: NavigationAccessPolicy(homeRoot: directory.url)
+        )
+        let canonicalPath = destination.resolvingSymlinksInPath()
+            .standardizedFileURL.path
+
+        try expect(
+            coordinator.preview(data)
+                == .failure(.transfer(.duplicatePath(canonicalPath)))
         )
     }
 
@@ -701,6 +929,54 @@ struct ContractTests {
         guard case .failure(.transaction(.rollbackFailed(_, _))) = coordinator.replace(with: fixture.data) else {
             throw ContractTestFailure("Expected distinct settings transfer rollback failure")
         }
+    }
+
+    private static func testSettingsTransferRollbackRestoresDisabledLaunchRuntime() throws {
+        let previous = AppSettings(launchAtLogin: true)
+        let settingsStore = FakeSettingsStore(initial: previous)
+        let launch = FakeLaunchAtLoginManager(status: .notRegistered)
+        let invocation = InvocationController(
+            settingsStore: settingsStore,
+            hotKeyController: FakeHotKeyRegistrar(activeBinding: previous.shortcut),
+            launchAtLoginController: launch
+        )
+        invocation.loadAndRegister()
+
+        let result = invocation.commitImportedSettings(
+            previous,
+            persistAdditionalStores: { throw FakeStoreError.saveFailed },
+            rollbackAdditionalStores: {}
+        )
+
+        guard case .failure(.persistence) = result else {
+            throw ContractTestFailure("Expected imported settings persistence failure")
+        }
+        try expect(launch.enabled == false)
+        try expect(launch.status == .notRegistered)
+    }
+
+    private static func testSettingsTransferRollbackRestoresEnabledLaunchRuntime() throws {
+        let previous = AppSettings(launchAtLogin: false)
+        let settingsStore = FakeSettingsStore(initial: previous)
+        let launch = FakeLaunchAtLoginManager(status: .enabled)
+        let invocation = InvocationController(
+            settingsStore: settingsStore,
+            hotKeyController: FakeHotKeyRegistrar(activeBinding: previous.shortcut),
+            launchAtLoginController: launch
+        )
+        invocation.loadAndRegister()
+
+        let result = invocation.commitImportedSettings(
+            previous,
+            persistAdditionalStores: { throw FakeStoreError.saveFailed },
+            rollbackAdditionalStores: {}
+        )
+
+        guard case .failure(.persistence) = result else {
+            throw ContractTestFailure("Expected imported settings persistence failure")
+        }
+        try expect(launch.enabled)
+        try expect(launch.status == .enabled)
     }
 
     private static func transferFixture(

@@ -30,6 +30,21 @@ claims are backed by source, binary, and runtime checks rather than telemetry.
 - Launch at login via `SMAppService.mainApp`, with user-visible status: enabled, requires approval, not registered, or app service not found.
 - Saved locations, home navigation, basic panel file browsing, safe operation contracts, Quick Look/thumbnail contracts, and lifecycle teardown diagnostics.
 
+## Configuration Transfer
+
+Open **Settings… → General** to export a versioned JSON configuration containing
+app settings, Favorite groups, and saved Favorite locations. Import shows a
+preview and requires explicit confirmation before replacing the current
+configuration.
+
+Bookmark access may not transfer to another Mac. PathShelf keeps those Favorites
+visible with a warning; use **Choose New Folder…** from the Favorite context menu,
+or press `Command-Shift-R`, to grant access again without changing its name,
+group, or order.
+
+Exported files contain saved paths and bookmark data. Store and share them with
+the same care as other personal configuration backups.
+
 ## Platform
 
 - macOS 15 or later

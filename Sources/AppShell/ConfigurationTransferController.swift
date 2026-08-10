@@ -127,7 +127,15 @@ final class ConfigurationTransferController: NSObject {
             let data: Data
             do {
                 data = try withSecurityScopedAccess(to: url) {
-                    try Data(contentsOf: url, options: .mappedIfSafe)
+                    let values = try url.resourceValues(
+                        forKeys: [.fileSizeKey, .isRegularFileKey]
+                    )
+                    guard values.isRegularFile == true,
+                          let fileSize = values.fileSize,
+                          fileSize <= SettingsTransferCodec.maximumDocumentByteCount else {
+                        throw SettingsTransferError.documentTooLarge
+                    }
+                    return try Data(contentsOf: url)
                 }
             } catch {
                 onStatus?(

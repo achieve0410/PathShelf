@@ -354,10 +354,13 @@ final class PathShelfApp: NSObject, NSApplicationDelegate, NSMenuItemValidation 
             generation: 0,
             teardownCount: 0
         )
-        let keyboardReauthorizationPreservesBrowserState =
+        let keyboardReauthorizationProbe =
             await panelController?.runKeyboardReauthorizationStateProbe(
                 in: fixtureURL.appendingPathComponent("Existing", isDirectory: true)
-            ) == true
+            ) ?? KeyboardReauthorizationProbeResult(
+                targetingReady: false,
+                preservesBrowserState: false
+            )
         let interactionProbe = await panelController?.runInteractionProbe()
         let configurationTransferProbe = settingsWindowController?.runConfigurationTransferProbe(
             in: fixtureURL
@@ -385,7 +388,13 @@ final class PathShelfApp: NSObject, NSApplicationDelegate, NSMenuItemValidation 
         smokePrint("SMOKE browserConflictDefaultSkip=\(browserSnapshot.lastOperationStatus == .skipped)")
         smokePrint("SMOKE savedLocationRoundTrip=\(browserSnapshot.savedLocationNames.contains("Fixture Renamed"))")
         smokePrint(
-            "SMOKE keyboardReauthorizationPreservesBrowserState=\(keyboardReauthorizationPreservesBrowserState)"
+            "SMOKE keyboardReauthorizationTargetingReady=\(keyboardReauthorizationProbe.targetingReady)"
+        )
+        smokePrint(
+            "SMOKE keyboardReauthorizationPreservesBrowserState=\(keyboardReauthorizationProbe.preservesBrowserState)"
+        )
+        smokePrint(
+            "SMOKE recoveredFavoriteWarningHidden=\(SavedLocationTableDataSource.showsWarning(for: .recovered) == false)"
         )
         smokePrint("SMOKE configurationTransferRoundTrip=\(configurationTransferProbe?.roundTripPassed == true)")
         smokePrint("SMOKE configurationTransferFavoriteIncluded=\(configurationTransferProbe?.favoriteIncluded == true)")
@@ -700,8 +709,14 @@ final class FloatingPanelController {
         await contentView?.runInteractionProbe() ?? (false, "unavailable")
     }
 
-    func runKeyboardReauthorizationStateProbe(in directoryURL: URL) async -> Bool {
-        await contentView?.runKeyboardReauthorizationStateProbe(in: directoryURL) == true
+    func runKeyboardReauthorizationStateProbe(
+        in directoryURL: URL
+    ) async -> KeyboardReauthorizationProbeResult {
+        await contentView?.runKeyboardReauthorizationStateProbe(in: directoryURL)
+            ?? KeyboardReauthorizationProbeResult(
+                targetingReady: false,
+                preservesBrowserState: false
+            )
     }
 
     func reauthorizeSelectedFavorite() {

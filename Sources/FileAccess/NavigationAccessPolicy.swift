@@ -33,6 +33,16 @@ public struct NavigationAccessPolicy: Sendable {
         }
     }
 
+    public func validateImportedDeclaredPath(_ path: String) throws {
+        let normalized = normalizedURL(
+            URL(fileURLWithPath: path, isDirectory: true)
+        )
+        guard isSupportedSavedLocation(normalized)
+                || isPortableUserHomeDescendant(normalized) else {
+            throw NavigationAccessPolicyError.unsupportedSavedLocation(normalized.path)
+        }
+    }
+
     public func validateResolvedBookmarkURL(_ url: URL, declaredPath: String) throws {
         let resolved = normalizedURL(url)
         try validateSavedLocation(resolved)
@@ -84,6 +94,11 @@ public struct NavigationAccessPolicy: Sendable {
     private func isExternalVolumeDescendant(_ url: URL) -> Bool {
         let components = url.pathComponents
         return components.count > 2 && components[0] == "/" && components[1] == "Volumes"
+    }
+
+    private func isPortableUserHomeDescendant(_ url: URL) -> Bool {
+        let components = url.pathComponents
+        return components.count > 2 && components[0] == "/" && components[1] == "Users"
     }
 
     private static let protectedSystemRoots = [
