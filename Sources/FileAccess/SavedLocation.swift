@@ -17,6 +17,23 @@ public struct SavedLocation: Codable, Equatable, Identifiable, Sendable {
         case staleBookmark
         case permissionDenied
         case recovered
+
+        public var accessibilityDescription: String {
+            switch self {
+            case .available, .recovered:
+                return "Available"
+            case .unavailable:
+                return "Unavailable"
+            case .iCloudPlaceholder:
+                return "Available in iCloud"
+            case .disconnected:
+                return "External drive disconnected"
+            case .networkUnavailable:
+                return "Network location unavailable"
+            case .staleBookmark, .permissionDenied:
+                return "Needs folder access on this Mac"
+            }
+        }
     }
 
     public var id: UUID

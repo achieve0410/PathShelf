@@ -57,6 +57,29 @@ public enum InvocationControllerError: Error, Equatable, CustomStringConvertible
     }
 }
 
+public enum ImportedSettingsCommitError: Error, Equatable, CustomStringConvertible, Sendable {
+    case hotKey(HotKeyRegistrationError)
+    case launchAtLogin(LaunchAtLoginError)
+    case contradictoryLaunchAtLoginStatus(requestedEnabled: Bool, actual: LaunchAtLoginStatus)
+    case persistence(String)
+    case rollbackFailed(primary: String, failures: [String])
+
+    public var description: String {
+        switch self {
+        case .hotKey(let error):
+            return error.description
+        case .launchAtLogin(let error):
+            return error.description
+        case .contradictoryLaunchAtLoginStatus(let requestedEnabled, let actual):
+            return "Launch-at-login requested \(requestedEnabled), got \(actual.rawValue)."
+        case .persistence(let message):
+            return message
+        case .rollbackFailed(let primary, let failures):
+            return "\(primary) Rollback failed: \(failures.joined(separator: "; "))."
+        }
+    }
+}
+
 public final class InvocationController: @unchecked Sendable {
     private let settingsStore: SettingsPersisting
     private let hotKeyController: HotKeyRegistering
@@ -83,6 +106,135 @@ public final class InvocationController: @unchecked Sendable {
     public func loadAndRegister() {
         settings = loadSettings()
         registerLoadedShortcut()
+    }
+
+    public func commitImportedSettings(
+        _ candidate: AppSettings,
+        persistAdditionalStores: () throws -> Void,
+        rollbackAdditionalStores: () throws -> Void
+    ) -> Result<Void, ImportedSettingsCommitError> {
+        let previous = settings
+        let previousBinding = hotKeyController.activeBinding
+        let previousLaunchStatus = launchAtLoginController.status
+        let shortcutChanged = previousBinding != candidate.shortcut
+        var launchChanged = false
+
+        func rollbackRuntime(primary: ImportedSettingsCommitError) -> ImportedSettingsCommitError {
+            var failures: [String] = []
+
+            if launchChanged {
+                let previousLaunchEnabled = previousLaunchStatus == .enabled
+                    || previousLaunchStatus == .requiresApproval
+                switch launchAtLoginController.apply(enabled: previousLaunchEnabled) {
+                case .success(let status):
+                    let acceptedNotFound = previousLaunchEnabled == false && status == .notFound
+                    if Self.isSuccessfulLaunchStatus(
+                        status,
+                        requestedEnabled: previousLaunchEnabled
+                    ) == false && acceptedNotFound == false {
+                        failures.append("Launch-at-login rollback returned \(status.rawValue)")
+                    }
+                case .failure(let error):
+                    failures.append("Launch-at-login rollback: \(error.description)")
+                }
+            }
+
+            if shortcutChanged {
+                if let previousBinding {
+                    switch hotKeyController.validateAndCommit(previousBinding) {
+                    case .success:
+                        break
+                    case .failure(let error):
+                        hotKeyController.unregister()
+                        failures.append("Shortcut rollback: \(error.description)")
+                    }
+                } else {
+                    hotKeyController.unregister()
+                }
+            }
+
+            settings = previous
+            if failures.isEmpty {
+                return primary
+            }
+            return .rollbackFailed(primary: primary.description, failures: failures)
+        }
+
+        if shortcutChanged {
+            switch hotKeyController.validateAndCommit(candidate.shortcut) {
+            case .success:
+                break
+            case .failure(let error):
+                settings = previous
+                return .failure(.hotKey(error))
+            }
+        }
+
+        let launchStatus = previousLaunchStatus
+        let acceptedNotFound = candidate.launchAtLogin == false && launchStatus == .notFound
+        if Self.isSuccessfulLaunchStatus(
+            launchStatus,
+            requestedEnabled: candidate.launchAtLogin
+        ) == false && acceptedNotFound == false {
+            if candidate.launchAtLogin && launchStatus == .notFound {
+                return .failure(
+                    rollbackRuntime(
+                        primary: .contradictoryLaunchAtLoginStatus(
+                            requestedEnabled: true,
+                            actual: .notFound
+                        )
+                    )
+                )
+            }
+            switch launchAtLoginController.apply(enabled: candidate.launchAtLogin) {
+            case .success(let status):
+                launchChanged = true
+                guard Self.isSuccessfulLaunchStatus(
+                    status,
+                    requestedEnabled: candidate.launchAtLogin
+                ) else {
+                    return .failure(
+                        rollbackRuntime(
+                            primary: .contradictoryLaunchAtLoginStatus(
+                                requestedEnabled: candidate.launchAtLogin,
+                                actual: status
+                            )
+                        )
+                    )
+                }
+            case .failure(let error):
+                return .failure(rollbackRuntime(primary: .launchAtLogin(error)))
+            }
+        }
+
+        do {
+            try persistAdditionalStores()
+            try settingsStore.save(candidate)
+            settings = candidate
+            lastError = nil
+            return .success(())
+        } catch {
+            let primary = ImportedSettingsCommitError.persistence(String(describing: error))
+            var rollbackFailures: [String] = []
+            do {
+                try rollbackAdditionalStores()
+            } catch {
+                rollbackFailures.append("Additional stores: \(error)")
+            }
+            let runtimeResult = rollbackRuntime(primary: primary)
+            if case .rollbackFailed(_, let failures) = runtimeResult {
+                rollbackFailures.append(contentsOf: failures)
+            }
+            if rollbackFailures.isEmpty {
+                return .failure(primary)
+            }
+            return .failure(
+                .rollbackFailed(
+                    primary: primary.description,
+                    failures: rollbackFailures
+                )
+            )
+        }
     }
 
     public func validateAndCommitShortcut(_ binding: ShortcutBinding) -> Result<Void, InvocationControllerError> {

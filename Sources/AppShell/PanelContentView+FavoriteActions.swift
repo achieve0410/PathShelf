@@ -23,6 +23,13 @@ extension PanelContentView {
             openWithItem.submenu = makeFavoriteOpenWithMenu()
             menu.addItem(openWithItem)
             menu.addItem(withTitle: "Retry Access", action: #selector(retrySavedLocation(_:)), keyEquivalent: "").target = self
+            let reauthorizeItem = menu.addItem(
+                withTitle: "Choose New Folder…",
+                action: #selector(reauthorizeSavedLocation(_:)),
+                keyEquivalent: ""
+            )
+            reauthorizeItem.target = self
+            reauthorizeItem.identifier = .init("PathShelf.Favorites.ChooseNewFolder")
             menu.addItem(NSMenuItem.separator())
             menu.addItem(withTitle: "Rename…", action: #selector(renameSavedLocation(_:)), keyEquivalent: "").target = self
             menu.addItem(withTitle: "Move Up", action: #selector(moveSavedLocationUp(_:)), keyEquivalent: "").target = self
@@ -214,6 +221,71 @@ extension PanelContentView {
             }
             self?.refreshTables()
         }
+    }
+
+    func reauthorizeSelectedOrFirstUnavailableFavorite() async -> Bool {
+        await awaitInitialLoad()
+        guard let id = Self.reauthorizationTargetID(
+            selectedRow: sidebarTable.selectedRow,
+            visibleItems: sidebarDataSource.visibleItems,
+            savedLocations: model.savedLocations
+        ) else {
+            showStatus("No Favorite needs folder access.")
+            return false
+        }
+        presentReauthorizationPanel(for: id)
+        return true
+    }
+
+    static func reauthorizationTargetID(
+        selectedRow: Int,
+        visibleItems: [FavoriteSidebarItem],
+        savedLocations: [SavedLocation]
+    ) -> UUID? {
+        if visibleItems.indices.contains(selectedRow),
+           case .location(let location) = visibleItems[selectedRow] {
+            return location.id
+        }
+        return savedLocations.first(where: {
+            ExternalLocationStateResolver.isUsable($0.availability) == false
+        })?.id
+    }
+
+    @objc func reauthorizeSavedLocation(_ sender: Any?) {
+        guard let id = favoriteIDForAction(sender) else {
+            return
+        }
+        presentReauthorizationPanel(for: id)
+    }
+
+    private func presentReauthorizationPanel(for id: UUID) {
+        let panel = NSOpenPanel()
+        panel.identifier = .init("PathShelf.Favorites.ReauthorizePanel")
+        panel.canChooseFiles = false
+        panel.canChooseDirectories = true
+        panel.allowsMultipleSelection = false
+        panel.prompt = "Choose New Folder"
+        panel.begin { [weak self] response in
+            guard let self, response == .OK, let url = panel.url else {
+                return
+            }
+            do {
+                try model.reauthorizeSavedLocation(id: id, url: url)
+                refreshTables()
+                let name = model.savedLocations.first(where: { $0.id == id })?.displayName
+                    ?? "Favorite"
+                showStatus("Folder access updated for \(name).")
+            } catch {
+                showError(reauthorizationErrorMessage(error))
+            }
+        }
+    }
+
+    private func reauthorizationErrorMessage(_ error: Error) -> String {
+        if let browserError = error as? FileBrowserError {
+            return browserError.description
+        }
+        return "Could not update folder access. The selected folder could not be saved."
     }
 
     @objc func moveSavedLocationUp(_ sender: Any?) {

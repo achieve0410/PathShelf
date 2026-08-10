@@ -146,13 +146,14 @@ final class SavedLocationTableDataSource: NSObject, NSTableViewDataSource, NSTab
     }
 
     private func locationCell(_ location: SavedLocation) -> NSView {
+        let showsWarning = Self.showsWarning(for: location.availability)
         let cell = NSTableCellView()
         let icon = NSImageView()
         icon.image = NSWorkspace.shared.icon(forFile: location.bookmark.originalPath)
         let label = NSTextField(labelWithString: location.displayName)
         label.font = .systemFont(ofSize: 13)
         label.lineBreakMode = .byTruncatingTail
-        label.textColor = location.availability == .available ? .labelColor : .secondaryLabelColor
+        label.textColor = showsWarning ? .secondaryLabelColor : .labelColor
         icon.translatesAutoresizingMaskIntoConstraints = false
         label.translatesAutoresizingMaskIntoConstraints = false
         cell.addSubview(icon)
@@ -165,14 +166,15 @@ final class SavedLocationTableDataSource: NSObject, NSTableViewDataSource, NSTab
             label.leadingAnchor.constraint(equalTo: icon.trailingAnchor, constant: 7),
             label.centerYAnchor.constraint(equalTo: cell.centerYAnchor)
         ])
-        if location.availability == .available {
+        if showsWarning == false {
             label.trailingAnchor.constraint(equalTo: cell.trailingAnchor, constant: -8).isActive = true
             cell.toolTip = location.bookmark.originalPath
         } else {
+            let accessibilityDescription = location.availability.accessibilityDescription
             let badge = NSImageView()
             badge.image = NSImage(
                 systemSymbolName: "exclamationmark.triangle.fill",
-                accessibilityDescription: location.availability.rawValue
+                accessibilityDescription: accessibilityDescription
             )
             badge.contentTintColor = .systemOrange
             badge.symbolConfiguration = .init(
@@ -188,9 +190,14 @@ final class SavedLocationTableDataSource: NSObject, NSTableViewDataSource, NSTab
                 badge.widthAnchor.constraint(equalToConstant: 13),
                 badge.heightAnchor.constraint(equalToConstant: 13)
             ])
-            cell.toolTip = "\(location.bookmark.originalPath)\n\(location.availability.rawValue)"
+            cell.toolTip = "\(location.bookmark.originalPath)\n\(accessibilityDescription)"
+            cell.setAccessibilityLabel("\(location.displayName), \(accessibilityDescription)")
         }
         return cell
+    }
+
+    static func showsWarning(for availability: SavedLocation.Availability) -> Bool {
+        ExternalLocationStateResolver.isUsable(availability) == false
     }
 
     func tableView(

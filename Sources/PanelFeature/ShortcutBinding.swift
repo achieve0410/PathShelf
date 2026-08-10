@@ -12,9 +12,31 @@ public struct ShortcutBinding: Codable, Equatable, Sendable {
     public var keyCode: UInt32
     public var modifiers: Set<Modifier>
 
+    private enum CodingKeys: String, CodingKey {
+        case keyCode
+        case modifiers
+    }
+
     public init(keyCode: UInt32, modifiers: Set<Modifier>) {
         self.keyCode = keyCode
         self.modifiers = modifiers
+    }
+
+    public init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        keyCode = try container.decode(UInt32.self, forKey: .keyCode)
+        modifiers = Set(
+            try container.decode([Modifier].self, forKey: .modifiers)
+        )
+    }
+
+    public func encode(to encoder: any Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(keyCode, forKey: .keyCode)
+        try container.encode(
+            Modifier.allCases.filter(modifiers.contains),
+            forKey: .modifiers
+        )
     }
 
     public static let `default` = ShortcutBinding(

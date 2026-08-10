@@ -59,7 +59,7 @@ extension PanelContentView {
         case .available:
             return model.items.isEmpty ? "Empty folder" : "\(model.items.count) items"
         case .unavailable(let availability, let path):
-            return "\(availability.rawValue): \(path)"
+            return "\(availability.accessibilityDescription): \(path)"
         }
     }
 
@@ -98,6 +98,21 @@ extension PanelContentView {
     }
 
     func showError(_ message: String) {
+        showStatus(message)
+    }
+
+    func showStatus(_ message: String) {
         statusLabel.stringValue = message
+        statusLabel.toolTip = message
+        if let application = NSApp {
+            NSAccessibility.post(
+                element: application,
+                notification: .announcementRequested,
+                userInfo: [
+                    .announcement: message,
+                    .priority: NSAccessibilityPriorityLevel.high.rawValue
+                ]
+            )
+        }
     }
 }

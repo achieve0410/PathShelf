@@ -5,6 +5,11 @@ import PanelFeature
 import PreviewFeature
 import SettingsFeature
 
+struct KeyboardReauthorizationProbeResult {
+    var targetingReady: Bool
+    var preservesBrowserState: Bool
+}
+
 @MainActor
 final class PanelContentView: NSView, NSMenuItemValidation {
     static let favoriteGroupIconChoices: [(title: String, symbol: String)] = [
@@ -129,6 +134,51 @@ final class PanelContentView: NSView, NSMenuItemValidation {
         return model.snapshot
     }
 
+    func awaitInitialLoad() async {
+        await loadTask?.value
+    }
+
+    func runKeyboardReauthorizationStateProbe(
+        in directoryURL: URL
+    ) async -> KeyboardReauthorizationProbeResult {
+        let originalDirectory = model.currentDirectoryURL
+        await model.navigateToPathBarLocation(directoryURL)
+        let directoryBefore = model.currentDirectoryURL.standardizedFileURL
+        guard directoryBefore == directoryURL.standardizedFileURL else {
+            return KeyboardReauthorizationProbeResult(
+                targetingReady: false,
+                preservesBrowserState: false
+            )
+        }
+        let probeID = UUID()
+        let targetingReady = Self.reauthorizationTargetID(
+            selectedRow: -1,
+            visibleItems: [],
+            savedLocations: [
+                SavedLocation(
+                    id: probeID,
+                    displayName: "Needs Access",
+                    bookmark: PersistedBookmark(
+                        data: Data([0x00]),
+                        originalPath: "/Users/old-user/Missing",
+                        isSecurityScoped: true
+                    ),
+                    sortOrder: 0,
+                    availability: .permissionDenied
+                )
+            ]
+        ) == probeID
+        await awaitInitialLoad()
+        let preserved = model.currentDirectoryURL.standardizedFileURL == directoryBefore
+        await model.navigateToPathBarLocation(originalDirectory)
+        return KeyboardReauthorizationProbeResult(
+            targetingReady: targetingReady,
+            preservesBrowserState: preserved
+                && model.currentDirectoryURL.standardizedFileURL
+                    == originalDirectory.standardizedFileURL
+        )
+    }
+
     func resumeCachedInteractive() -> BrowserSnapshot {
         isTornDown = false
         loadTask?.cancel()
@@ -227,6 +277,15 @@ final class PanelContentView: NSView, NSMenuItemValidation {
         }?.items.first(where: { $0.title == "Reveal in Finder" })
         let favoriteRevealReady = favoriteRevealItem?.action == #selector(revealSavedLocation(_:))
             && favoriteRevealItem?.target?.responds(to: #selector(revealSavedLocation(_:))) == true
+        let favoriteReauthorizationItem = model.savedLocations.first.map {
+            makeFavoriteContextMenu(for: .location($0))
+        }?.items.first(where: { $0.title == "Choose New Folder…" })
+        let favoriteReauthorizationReady = favoriteReauthorizationItem?.identifier?.rawValue
+            == "PathShelf.Favorites.ChooseNewFolder"
+            && favoriteReauthorizationItem?.action == #selector(reauthorizeSavedLocation(_:))
+            && favoriteReauthorizationItem?.target?.responds(
+                to: #selector(reauthorizeSavedLocation(_:))
+            ) == true
 
         var contextFavoriteAdded = false
         if let directoryIndex = model.items.firstIndex(where: { $0.kind == .directory }),
@@ -267,12 +326,14 @@ final class PanelContentView: NSView, NSMenuItemValidation {
                 && fileMenuTargetsReady
                 && openWithTargetsReady
                 && favoriteRevealReady
+                && favoriteReauthorizationReady
                 && contextFavoriteAdded
                 && spaceQuickLookReady,
             "headerSortChanged=\(headerSortChanged) contextSelected=\(contextSelected) "
                 + "contextCleared=\(contextCleared) quickLookMenuRemoved=\(quickLookMenuRemoved) "
                 + "fileMenuTargetsReady=\(fileMenuTargetsReady) openWithTargetsReady=\(openWithTargetsReady) "
                 + "favoriteRevealReady=\(favoriteRevealReady) "
+                + "favoriteReauthorizationReady=\(favoriteReauthorizationReady) "
                 + "contextFavoriteAdded=\(contextFavoriteAdded) spaceQuickLookReady=\(spaceQuickLookReady) "
                 + "quickLook=\(quickLookDiagnostics)"
         )

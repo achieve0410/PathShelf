@@ -36,7 +36,7 @@ if nm -m "$APP_EXECUTABLE" 2>/dev/null | rg "getaddrinfo|gethostbyname|gethostby
   exit 1
 fi
 
-if rg -n "getaddrinfo|gethostbyname|gethostbyaddr|CFHost|NWResolver|URLSession|import Network|NWConnection|NWPathMonitor|CFNetwork|NSEvent\\.addGlobalMonitorForEvents|CGEventTap|AXIsProcessTrusted|Accessibility" Sources Package.swift; then
+if rg -n "getaddrinfo|gethostbyname|gethostbyaddr|CFHost|NWResolver|URLSession|import Network|NWConnection|NWPathMonitor|CFNetwork|NSEvent\\.addGlobalMonitorForEvents|CGEventTap|CGPreflightListenEventAccess|CGRequestListenEventAccess|AXIsProcessTrusted|AXUIElement(Create|Copy|Perform)|AXObserver(Create|AddNotification)|kAXTrustedCheckOptionPrompt|import ApplicationServices" Sources Package.swift; then
   echo "Forbidden source pattern found" >&2
   exit 1
 fi
