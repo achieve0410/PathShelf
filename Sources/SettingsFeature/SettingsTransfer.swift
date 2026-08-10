@@ -100,6 +100,9 @@ public enum SettingsTransferError: Error, Equatable, Sendable {
     case duplicatePath(String)
     case danglingGroupID(UUID)
     case invalidPath(String)
+    case invalidSortOrder(Int)
+    case duplicateGroupSortOrder(Int)
+    case duplicateLocationSortOrder(Int, UUID?)
 }
 
 public struct SettingsTransferCodec: Sendable {
@@ -170,6 +173,7 @@ public struct SettingsTransferCodec: Sendable {
         }
 
         var groupIDs = Set<UUID>()
+        var groupSortOrders = Set<Int>()
         for group in manifest.favoriteGroups {
             guard group.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false else {
                 throw SettingsTransferError.emptyGroupName(group.id)
@@ -177,10 +181,17 @@ public struct SettingsTransferCodec: Sendable {
             guard groupIDs.insert(group.id).inserted else {
                 throw SettingsTransferError.duplicateGroupID(group.id)
             }
+            guard group.sortOrder >= 0 else {
+                throw SettingsTransferError.invalidSortOrder(group.sortOrder)
+            }
+            guard groupSortOrders.insert(group.sortOrder).inserted else {
+                throw SettingsTransferError.duplicateGroupSortOrder(group.sortOrder)
+            }
         }
 
         var locationIDs = Set<UUID>()
         var paths = Set<String>()
+        var locationSortOrders: [UUID?: Set<Int>] = [:]
         for location in manifest.savedLocations {
             guard locationIDs.insert(location.id).inserted else {
                 throw SettingsTransferError.duplicateLocationID(location.id)
@@ -188,11 +199,21 @@ public struct SettingsTransferCodec: Sendable {
             guard let path = normalizedPath(location.bookmark.originalPath) else {
                 throw SettingsTransferError.invalidPath(location.bookmark.originalPath)
             }
-            guard paths.insert(path.lowercased()).inserted else {
+            guard paths.insert(path).inserted else {
                 throw SettingsTransferError.duplicatePath(path)
             }
             if let groupID = location.groupID, groupIDs.contains(groupID) == false {
                 throw SettingsTransferError.danglingGroupID(groupID)
+            }
+            guard location.sortOrder >= 0 else {
+                throw SettingsTransferError.invalidSortOrder(location.sortOrder)
+            }
+            guard locationSortOrders[location.groupID, default: []]
+                .insert(location.sortOrder).inserted else {
+                throw SettingsTransferError.duplicateLocationSortOrder(
+                    location.sortOrder,
+                    location.groupID
+                )
             }
         }
 

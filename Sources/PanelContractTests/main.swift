@@ -18,6 +18,7 @@ struct PanelContractTests {
             ("saved location writes are atomic on persistence failure", testSavedLocationAtomicityOnPersistenceFailure),
             ("saved location reauthorization preserves identity and grouping", testSavedLocationReauthorization),
             ("saved location reauthorization rejects unsupported paths", testSavedLocationReauthorizationRejectsUnsupportedPath),
+            ("saved location writes reject duplicate destination paths", testSavedLocationDuplicatePathRejection),
             ("saved location reauthorization rolls back persistence failure", testSavedLocationReauthorizationPersistenceFailure),
             ("unavailable saved locations remain visible without false success", testUnavailableSavedLocation),
             ("navigation errors use bounded human copy", testNavigationErrorAccessibilityCopy),
@@ -163,6 +164,36 @@ struct PanelContractTests {
         try expect(model.savedLocations == [location])
         try expect(persisted.withValue { $0 } == [location])
         try expect(saveCount.withValue { $0 } == 0)
+    }
+
+    @MainActor
+    private static func testSavedLocationDuplicatePathRejection() async throws {
+        let fixture = try TemporaryDirectory()
+        let savedA = try TemporaryDirectory()
+        let savedB = try TemporaryDirectory()
+        let first = try savedLocation(name: "First", url: savedA.url, order: 0)
+        let second = try savedLocation(name: "Second", url: savedB.url, order: 1)
+        let persisted = LockedBox<[SavedLocation]>([first, second])
+        let model = makeModel(home: fixture.url, savedLocations: persisted)
+        await model.loadInitialState()
+
+        var addRejected = false
+        do {
+            try model.addSavedLocation(url: savedA.url)
+        } catch {
+            addRejected = true
+        }
+        var reauthorizationRejected = false
+        do {
+            try model.reauthorizeSavedLocation(id: second.id, url: savedA.url)
+        } catch {
+            reauthorizationRejected = true
+        }
+
+        try expect(addRejected)
+        try expect(reauthorizationRejected)
+        try expect(model.savedLocations == [first, second])
+        try expect(persisted.withValue { $0 } == [first, second])
     }
 
     @MainActor

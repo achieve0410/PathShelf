@@ -41,6 +41,7 @@ public final class SettingsTransferCoordinator: @unchecked Sendable {
     private let bookmarkService: SecurityScopedBookmarkService
     private let locationProbe: ExternalLocationProbe
     private let codec: SettingsTransferCodec
+    private let navigationPolicy: NavigationAccessPolicy
 
     public init(
         invocationController: InvocationController,
@@ -48,7 +49,10 @@ public final class SettingsTransferCoordinator: @unchecked Sendable {
         favoriteGroupStore: FavoriteGroupStore,
         bookmarkService: SecurityScopedBookmarkService = SecurityScopedBookmarkService(),
         locationProbe: ExternalLocationProbe = .live,
-        codec: SettingsTransferCodec = SettingsTransferCodec()
+        codec: SettingsTransferCodec = SettingsTransferCodec(),
+        navigationPolicy: NavigationAccessPolicy = NavigationAccessPolicy(
+            homeRoot: FileManager.default.homeDirectoryForCurrentUser
+        )
     ) {
         self.invocationController = invocationController
         self.bookmarkStore = bookmarkStore
@@ -56,6 +60,7 @@ public final class SettingsTransferCoordinator: @unchecked Sendable {
         self.bookmarkService = bookmarkService
         self.locationProbe = locationProbe
         self.codec = codec
+        self.navigationPolicy = navigationPolicy
     }
 
     public func exportData(producerVersion: String) throws -> Data {
@@ -78,6 +83,21 @@ public final class SettingsTransferCoordinator: @unchecked Sendable {
             return .failure(.transfer(error))
         } catch {
             return .failure(.store(String(describing: error)))
+        }
+        if let defaultPath = manifest.settings.defaultLocationPath {
+            var isDirectory: ObjCBool = false
+            if FileManager.default.fileExists(atPath: defaultPath, isDirectory: &isDirectory) {
+                do {
+                    guard isDirectory.boolValue else {
+                        return .failure(.transfer(.invalidPath(defaultPath)))
+                    }
+                    try navigationPolicy.validateSavedLocation(
+                        URL(fileURLWithPath: defaultPath, isDirectory: true)
+                    )
+                } catch {
+                    return .failure(.transfer(.invalidPath(defaultPath)))
+                }
+            }
         }
         let importedLocations = manifest.savedLocations.map(resolveImportedLocation)
         return .success(
@@ -143,10 +163,11 @@ public final class SettingsTransferCoordinator: @unchecked Sendable {
     }
 
     private func resolveImportedLocation(_ transfer: TransferSavedLocation) -> SavedLocation {
-        let resolution = bookmarkService.resolve(transfer.bookmark)
+        let rawResolution = bookmarkService.resolve(transfer.bookmark)
         defer {
-            resolution.scopedURL?.close()
+            rawResolution.scopedURL?.close()
         }
+        let resolution = policyValidatedResolution(rawResolution, transfer: transfer)
         let metadata = resolution.scopedURL.map {
             locationProbe.metadata(for: $0.url)
         }
@@ -158,5 +179,29 @@ public final class SettingsTransferCoordinator: @unchecked Sendable {
             markRecovered: false
         )
         return transfer.savedLocation(availability: availability)
+    }
+
+    private func policyValidatedResolution(
+        _ resolution: BookmarkResolution,
+        transfer: TransferSavedLocation
+    ) -> BookmarkResolution {
+        guard let scopedURL = resolution.scopedURL else {
+            return resolution
+        }
+        do {
+            try navigationPolicy.validateResolvedBookmarkURL(
+                scopedURL.url,
+                declaredPath: transfer.bookmark.originalPath
+            )
+            return resolution
+        } catch {
+            return BookmarkResolution(
+                scopedURL: nil,
+                originalPath: transfer.bookmark.originalPath,
+                isStale: false,
+                availability: .permissionDenied,
+                error: .permissionDenied(originalPath: transfer.bookmark.originalPath)
+            )
+        }
     }
 }

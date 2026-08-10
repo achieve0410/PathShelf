@@ -145,6 +145,10 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate, NSTo
         configurationTransferController.runProbe(in: directory)
     }
 
+    func runConfigurationRollbackFailureMessageProbe() -> Bool {
+        configurationTransferController.rollbackFailureMessageProbe()
+    }
+
     func runConfigurationTransferAccessibilityProbe() -> Bool {
         let message = "Configuration transfer accessibility check."
         setStatus(message, tooltip: nil)

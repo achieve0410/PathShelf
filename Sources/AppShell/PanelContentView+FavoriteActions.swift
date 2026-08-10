@@ -224,7 +224,7 @@ extension PanelContentView {
     }
 
     func reauthorizeSelectedOrFirstUnavailableFavorite() async -> Bool {
-        await model.loadInitialState()
+        await awaitInitialLoad()
         let selectedID: UUID? = {
             let row = sidebarTable.selectedRow
             let items = sidebarDataSource.visibleItems

@@ -2,11 +2,14 @@ import Foundation
 
 public enum NavigationAccessPolicyError: Error, Equatable, Sendable, CustomStringConvertible {
     case unsupportedSavedLocation(String)
+    case bookmarkDestinationMismatch(declared: String, resolved: String)
 
     public var description: String {
         switch self {
         case .unsupportedSavedLocation(let path):
             return "Saved location is outside the supported local home or external volume scope: \(path)"
+        case .bookmarkDestinationMismatch(let declared, let resolved):
+            return "Bookmark destination \(resolved) does not match its saved path \(declared)."
         }
     }
 }
@@ -27,6 +30,20 @@ public struct NavigationAccessPolicy: Sendable {
         let normalized = normalizedURL(url)
         guard isSupportedSavedLocation(normalized) else {
             throw NavigationAccessPolicyError.unsupportedSavedLocation(normalized.path)
+        }
+    }
+
+    public func validateResolvedBookmarkURL(_ url: URL, declaredPath: String) throws {
+        let resolved = normalizedURL(url)
+        try validateSavedLocation(resolved)
+        let declared = normalizedURL(
+            URL(fileURLWithPath: declaredPath, isDirectory: true)
+        )
+        guard declared.path == resolved.path else {
+            throw NavigationAccessPolicyError.bookmarkDestinationMismatch(
+                declared: declared.path,
+                resolved: resolved.path
+            )
         }
     }
 
@@ -95,6 +112,6 @@ public struct NavigationAccessPolicy: Sendable {
     }
 
     private func normalizedURL(_ url: URL) -> URL {
-        url.standardizedFileURL
+        url.resolvingSymlinksInPath().standardizedFileURL
     }
 }

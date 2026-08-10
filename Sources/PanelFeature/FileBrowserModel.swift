@@ -73,6 +73,7 @@ public enum FileBrowserError: Error, Equatable, Sendable, CustomStringConvertibl
     case savedLocationMissing(UUID)
     case openPanelCancelled
     case unsupportedSavedLocation(String)
+    case duplicateSavedLocationPath(String)
     case favoriteGroupMissing(UUID)
     case invalidFavoriteGroupName
 
@@ -91,6 +92,8 @@ public enum FileBrowserError: Error, Equatable, Sendable, CustomStringConvertibl
             return "Folder selection was cancelled."
         case .unsupportedSavedLocation(let path):
             return "Saved location is outside the supported local home or external volume scope: \(path)"
+        case .duplicateSavedLocationPath(let path):
+            return "A Favorite already uses this folder: \(path)"
         case .favoriteGroupMissing(let id):
             return "Favorite group is missing: \(id.uuidString)"
         case .invalidFavoriteGroupName:
@@ -337,6 +340,7 @@ public final class FileBrowserModel {
         } catch NavigationAccessPolicyError.unsupportedSavedLocation(let path) {
             throw FileBrowserError.unsupportedSavedLocation(path)
         }
+        try validateUniqueSavedLocationPath(url)
         let bookmark = try environment.makeBookmark(url)
         let metadata = environment.externalLocationProbe.metadata(for: url)
         let location = SavedLocation(
@@ -379,6 +383,7 @@ public final class FileBrowserModel {
         } catch NavigationAccessPolicyError.unsupportedSavedLocation(let path) {
             throw FileBrowserError.unsupportedSavedLocation(path)
         }
+        try validateUniqueSavedLocationPath(url, excluding: id)
 
         let bookmark = try environment.makeBookmark(url)
         let metadata = environment.externalLocationProbe.metadata(for: url)
@@ -807,7 +812,10 @@ public final class FileBrowserModel {
 
     private func recoverSavedLocation(at index: Int, markRecovered: Bool) throws {
         let location = savedLocations[index]
-        let resolution = environment.resolveBookmark(location.bookmark)
+        let resolution = policyValidatedResolution(
+            environment.resolveBookmark(location.bookmark),
+            for: location
+        )
         let metadata = resolution.scopedURL.map { environment.externalLocationProbe.metadata(for: $0.url) }
         let nextAvailability = ExternalLocationStateResolver.availability(
             current: location.availability,
@@ -907,6 +915,27 @@ public final class FileBrowserModel {
         environment.navigationPolicy(environment.homeDirectory())
     }
 
+    private func validateUniqueSavedLocationPath(
+        _ url: URL,
+        excluding excludedID: UUID? = nil
+    ) throws {
+        let path = url.resolvingSymlinksInPath().standardizedFileURL.path
+        let duplicate = savedLocations.contains { location in
+            guard location.id != excludedID else {
+                return false
+            }
+            return URL(
+                fileURLWithPath: location.bookmark.originalPath,
+                isDirectory: true
+            )
+            .resolvingSymlinksInPath()
+            .standardizedFileURL.path == path
+        }
+        if duplicate {
+            throw FileBrowserError.duplicateSavedLocationPath(path)
+        }
+    }
+
     private func openSecurityScopeForSavedLocationIfNeeded(containing targetURL: URL) -> Bool {
         if let activeScopedURL,
            accessPolicy.isInsideScopedRoot(targetURL, scopedRoot: activeScopedURL.url) {
@@ -925,7 +954,10 @@ public final class FileBrowserModel {
 
     private func openSecurityScopeForSavedLocation(at index: Int) throws -> SecurityScopedURL {
         closeActiveScopedURL()
-        let resolution = environment.resolveBookmark(savedLocations[index].bookmark)
+        let resolution = policyValidatedResolution(
+            environment.resolveBookmark(savedLocations[index].bookmark),
+            for: savedLocations[index]
+        )
         var candidate = savedLocations
         let metadata = resolution.scopedURL.map { environment.externalLocationProbe.metadata(for: $0.url) }
         candidate[index].availability = ExternalLocationStateResolver.availability(
@@ -974,6 +1006,31 @@ public final class FileBrowserModel {
             policy.isInsideScopedRoot(
                 targetURL,
                 scopedRoot: URL(fileURLWithPath: location.bookmark.originalPath, isDirectory: true)
+            )
+        }
+    }
+
+    private func policyValidatedResolution(
+        _ resolution: BookmarkResolution,
+        for location: SavedLocation
+    ) -> BookmarkResolution {
+        guard let scopedURL = resolution.scopedURL else {
+            return resolution
+        }
+        do {
+            try accessPolicy.validateResolvedBookmarkURL(
+                scopedURL.url,
+                declaredPath: location.bookmark.originalPath
+            )
+            return resolution
+        } catch {
+            environment.closeSecurityScopedURL(scopedURL)
+            return BookmarkResolution(
+                scopedURL: nil,
+                originalPath: location.bookmark.originalPath,
+                isStale: false,
+                availability: .permissionDenied,
+                error: .permissionDenied(originalPath: location.bookmark.originalPath)
             )
         }
     }

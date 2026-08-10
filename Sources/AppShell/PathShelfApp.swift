@@ -275,6 +275,8 @@ final class PathShelfApp: NSObject, NSApplicationDelegate, NSMenuItemValidation 
         let configurationTransferReady = settingsWindowController?.configurationTransferReady == true
         let configurationTransferAccessibilityReady =
             settingsWindowController?.runConfigurationTransferAccessibilityProbe() == true
+        let configurationRollbackFailureMessageReady =
+            settingsWindowController?.runConfigurationRollbackFailureMessageProbe() == true
         let keyboardReauthorizationReady = NSApp.mainMenu?.items
             .first(where: { $0.title == "Favorites" })?
             .submenu?.items
@@ -297,6 +299,9 @@ final class PathShelfApp: NSObject, NSApplicationDelegate, NSMenuItemValidation 
         smokePrint("SMOKE configurationTransferReady=\(configurationTransferReady)")
         smokePrint(
             "SMOKE configurationTransferAccessibilityReady=\(configurationTransferAccessibilityReady)"
+        )
+        smokePrint(
+            "SMOKE configurationRollbackFailureMessageReady=\(configurationRollbackFailureMessageReady)"
         )
         smokePrint("SMOKE keyboardReauthorizationReady=\(keyboardReauthorizationReady)")
         smokePrint("SMOKE loadedPlacement=\(loadedPlacement.rawValue)")
@@ -349,6 +354,10 @@ final class PathShelfApp: NSObject, NSApplicationDelegate, NSMenuItemValidation 
             generation: 0,
             teardownCount: 0
         )
+        let keyboardReauthorizationPreservesBrowserState =
+            await panelController?.runKeyboardReauthorizationStateProbe(
+                in: fixtureURL.appendingPathComponent("Existing", isDirectory: true)
+            ) == true
         let interactionProbe = await panelController?.runInteractionProbe()
         let configurationTransferProbe = settingsWindowController?.runConfigurationTransferProbe(
             in: fixtureURL
@@ -375,6 +384,9 @@ final class PathShelfApp: NSObject, NSApplicationDelegate, NSMenuItemValidation 
         smokePrint("SMOKE browserSelectionClearedOnTeardown=\(browserSnapshot.selectedItemName == nil)")
         smokePrint("SMOKE browserConflictDefaultSkip=\(browserSnapshot.lastOperationStatus == .skipped)")
         smokePrint("SMOKE savedLocationRoundTrip=\(browserSnapshot.savedLocationNames.contains("Fixture Renamed"))")
+        smokePrint(
+            "SMOKE keyboardReauthorizationPreservesBrowserState=\(keyboardReauthorizationPreservesBrowserState)"
+        )
         smokePrint("SMOKE configurationTransferRoundTrip=\(configurationTransferProbe?.roundTripPassed == true)")
         smokePrint("SMOKE configurationTransferFavoriteIncluded=\(configurationTransferProbe?.favoriteIncluded == true)")
         smokePrint("SMOKE configurationTransferMalformedRejected=\(configurationTransferProbe?.malformedRejected == true)")
@@ -686,6 +698,10 @@ final class FloatingPanelController {
 
     func runInteractionProbe() async -> (passed: Bool, diagnostics: String) {
         await contentView?.runInteractionProbe() ?? (false, "unavailable")
+    }
+
+    func runKeyboardReauthorizationStateProbe(in directoryURL: URL) async -> Bool {
+        await contentView?.runKeyboardReauthorizationStateProbe(in: directoryURL) == true
     }
 
     func reauthorizeSelectedFavorite() {

@@ -129,6 +129,25 @@ final class PanelContentView: NSView, NSMenuItemValidation {
         return model.snapshot
     }
 
+    func awaitInitialLoad() async {
+        await loadTask?.value
+    }
+
+    func runKeyboardReauthorizationStateProbe(in directoryURL: URL) async -> Bool {
+        let originalDirectory = model.currentDirectoryURL
+        await model.navigateToPathBarLocation(directoryURL)
+        let directoryBefore = model.currentDirectoryURL.standardizedFileURL
+        guard directoryBefore == directoryURL.standardizedFileURL else {
+            return false
+        }
+        _ = await reauthorizeSelectedOrFirstUnavailableFavorite()
+        let preserved = model.currentDirectoryURL.standardizedFileURL == directoryBefore
+        await model.navigateToPathBarLocation(originalDirectory)
+        return preserved
+            && model.currentDirectoryURL.standardizedFileURL
+                == originalDirectory.standardizedFileURL
+    }
+
     func resumeCachedInteractive() -> BrowserSnapshot {
         isTornDown = false
         loadTask?.cancel()

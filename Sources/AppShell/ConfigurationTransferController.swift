@@ -60,6 +60,19 @@ final class ConfigurationTransferController: NSObject {
         }
     }
 
+    func rollbackFailureMessageProbe() -> Bool {
+        let message = importFailureMessage(
+            .transaction(
+                .rollbackFailed(
+                    primary: "Primary import failure.",
+                    failures: ["Settings restoration failure."]
+                )
+            )
+        )
+        return message.contains("restoration also failed")
+            && message.contains("were kept") == false
+    }
+
     @objc func exportConfiguration(_ sender: Any?) {
         guard let window = hostWindow(for: sender) else {
             onStatus?("Could not export configuration.", nil)
@@ -204,7 +217,16 @@ final class ConfigurationTransferController: NSObject {
         case .store:
             return "Could not import configuration. Existing settings and Favorites were kept."
         case .transaction(let error):
-            return "Could not import configuration. Existing settings and Favorites were kept. \(error.description)"
+            if case .rollbackFailed = error {
+                return """
+                Could not import configuration, and restoration also failed. \
+                Some settings or Favorites may have changed. \(error.description)
+                """
+            }
+            return """
+            Could not import configuration. Existing settings and Favorites were kept. \
+            \(error.description)
+            """
         }
     }
 
