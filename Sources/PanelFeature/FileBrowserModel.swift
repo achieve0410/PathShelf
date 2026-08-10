@@ -367,6 +367,41 @@ public final class FileBrowserModel {
         try addSavedLocation(url: url)
     }
 
+    public func reauthorizeSavedLocation(id: UUID, url: URL) throws {
+        guard let index = savedLocations.firstIndex(where: { $0.id == id }) else {
+            throw FileBrowserError.savedLocationMissing(id)
+        }
+        do {
+            try accessPolicy.validateSavedLocation(url)
+        } catch NavigationAccessPolicyError.unsupportedSavedLocation(let path) {
+            throw FileBrowserError.unsupportedSavedLocation(path)
+        }
+
+        let bookmark = try environment.makeBookmark(url)
+        let metadata = environment.externalLocationProbe.metadata(for: url)
+        var updated = savedLocations[index]
+        updated.bookmark = bookmark
+        updated.availability = ExternalLocationStateResolver.availability(
+            current: updated.availability,
+            resolution: BookmarkResolution(
+                scopedURL: nil,
+                originalPath: url.path,
+                isStale: false,
+                availability: .available,
+                error: nil
+            ),
+            metadata: metadata,
+            lastKnownExternalKind: updated.lastKnownExternalKind,
+            markRecovered: true
+        )
+        updated.lastKnownExternalKind = metadata.externalKind
+
+        var candidate = savedLocations
+        candidate[index] = updated
+        try persistSavedLocations(candidate)
+        savedLocations = normalizedSavedLocations(candidate)
+    }
+
     public func renameSavedLocation(id: UUID, to displayName: String) throws {
         guard let index = savedLocations.firstIndex(where: { $0.id == id }) else {
             throw FileBrowserError.savedLocationMissing(id)

@@ -16,6 +16,9 @@ struct PanelContractTests {
             ("saved locations persist rename reorder and remove", testSavedLocationManagement),
             ("favorite groups persist grouping and drag-style reordering", testFavoriteGroupManagement),
             ("saved location writes are atomic on persistence failure", testSavedLocationAtomicityOnPersistenceFailure),
+            ("saved location reauthorization preserves identity and grouping", testSavedLocationReauthorization),
+            ("saved location reauthorization rejects unsupported paths", testSavedLocationReauthorizationRejectsUnsupportedPath),
+            ("saved location reauthorization rolls back persistence failure", testSavedLocationReauthorizationPersistenceFailure),
             ("unavailable saved locations remain visible without false success", testUnavailableSavedLocation),
             ("up navigation is bounded by home root", testUpNavigationStopsAtHomeRoot),
             ("saved location navigation is bounded by authorized root and closes on exit", testSavedLocationBoundaryAndScopeLifetime),
@@ -86,6 +89,111 @@ struct PanelContractTests {
         }
         try expect(model.savedLocations.map(\.displayName) == ["First", "Second"])
         try expect(box.withValue { $0.map(\.displayName) } == ["First", "Second"])
+    }
+
+    @MainActor
+    private static func testSavedLocationReauthorization() async throws {
+        let fixture = try TemporaryDirectory()
+        let replacement = fixture.url.appendingPathComponent("replacement", isDirectory: true)
+        try FileManager.default.createDirectory(at: replacement, withIntermediateDirectories: true)
+        let groupID = UUID(uuidString: "00000000-0000-0000-0000-000000000071")!
+        let locationID = UUID(uuidString: "00000000-0000-0000-0000-000000000072")!
+        let group = FavoriteGroup(id: groupID, name: "Imported", sortOrder: 0)
+        let original = SavedLocation(
+            id: locationID,
+            displayName: "Imported Favorite",
+            bookmark: PersistedBookmark(
+                data: Data([0x01]),
+                originalPath: "/Users/old-user/Missing",
+                isSecurityScoped: true
+            ),
+            sortOrder: 0,
+            availability: .permissionDenied,
+            lastKnownExternalKind: .network,
+            groupID: groupID
+        )
+        let replacementBookmark = PersistedBookmark(
+            data: Data([0x02, 0x03]),
+            originalPath: replacement.path,
+            isSecurityScoped: true
+        )
+        let persisted = LockedBox([original])
+        let model = makeModel(
+            home: fixture.url,
+            savedLocations: persisted,
+            favoriteGroups: LockedBox([group]),
+            makeBookmark: { _ in replacementBookmark }
+        )
+        await model.loadInitialState()
+
+        try model.reauthorizeSavedLocation(id: locationID, url: replacement)
+
+        let updated = try unwrap(model.savedLocations.first)
+        try expect(updated.id == original.id)
+        try expect(updated.displayName == original.displayName)
+        try expect(updated.sortOrder == original.sortOrder)
+        try expect(updated.groupID == original.groupID)
+        try expect(updated.bookmark == replacementBookmark)
+        try expect(updated.availability == .recovered)
+        try expect(updated.lastKnownExternalKind == .local)
+        try expect(persisted.withValue { $0 } == model.savedLocations)
+    }
+
+    @MainActor
+    private static func testSavedLocationReauthorizationRejectsUnsupportedPath() async throws {
+        let fixture = try TemporaryDirectory()
+        let location = try savedLocation(name: "Existing", url: fixture.url, order: 0)
+        let persisted = LockedBox([location])
+        let saveCount = LockedBox(0)
+        let model = makeModel(
+            home: fixture.url,
+            savedLocations: persisted,
+            saveSavedLocations: { _ in saveCount.withValue { $0 += 1 } }
+        )
+        await model.loadInitialState()
+
+        do {
+            try model.reauthorizeSavedLocation(id: location.id, url: URL(fileURLWithPath: "/"))
+            throw PanelContractFailure("Expected unsupported replacement path")
+        } catch FileBrowserError.unsupportedSavedLocation("/") {
+        }
+
+        try expect(model.savedLocations == [location])
+        try expect(persisted.withValue { $0 } == [location])
+        try expect(saveCount.withValue { $0 } == 0)
+    }
+
+    @MainActor
+    private static func testSavedLocationReauthorizationPersistenceFailure() async throws {
+        let fixture = try TemporaryDirectory()
+        let replacement = fixture.url.appendingPathComponent("replacement", isDirectory: true)
+        try FileManager.default.createDirectory(at: replacement, withIntermediateDirectories: true)
+        let original = try savedLocation(name: "Existing", url: fixture.url, order: 0)
+        let persisted = LockedBox([original])
+        let replacementBookmark = PersistedBookmark(
+            data: Data([0x04]),
+            originalPath: replacement.path,
+            isSecurityScoped: true
+        )
+        let model = makeModel(
+            home: fixture.url,
+            savedLocations: persisted,
+            saveSavedLocations: { _ in
+                throw PanelContractFailure("forced reauthorization save failure")
+            },
+            makeBookmark: { _ in replacementBookmark }
+        )
+        await model.loadInitialState()
+
+        do {
+            try model.reauthorizeSavedLocation(id: original.id, url: replacement)
+            throw PanelContractFailure("Expected reauthorization persistence failure")
+        } catch let error as PanelContractFailure {
+            try expect(error.description == "forced reauthorization save failure")
+        }
+
+        try expect(model.savedLocations == [original])
+        try expect(persisted.withValue { $0 } == [original])
     }
 
     @MainActor
