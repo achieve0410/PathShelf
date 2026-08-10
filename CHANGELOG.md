@@ -6,7 +6,11 @@ releases.
 
 ## Unreleased
 
-No changes yet.
+### Added
+
+- Native configuration export and import for app settings, Favorite groups,
+  and saved locations, including explicit replacement confirmation and
+  recovery for unavailable imported Favorites.
 
 ## [0.1.0] - 2026-08-10
 
