@@ -14,6 +14,9 @@ struct ContractTests {
             ("legacy favorites without a group decode into Default Group", testLegacyFavoriteGroupCompatibility),
             ("default settings prefer cursor-adjacent placement", testDefaultSettings),
             ("settings round-trip through JSON storage", testSettingsRoundTrip),
+            ("settings transfer manifest validates relationships", testSettingsTransferRelationshipValidation),
+            ("settings transfer manifest round-trips deterministically", testSettingsTransferRoundTrip),
+            ("settings transfer manifest rejects incompatible documents", testSettingsTransferValidation),
             ("browser display preferences round-trip and default safely", testBrowserDisplayPreferences),
             ("missing settings file throws explicit error", testMissingSettingsIsExplicit),
             ("default shortcut contains Command or Control", testDefaultShortcutValidation),
@@ -183,6 +186,174 @@ struct ContractTests {
         try store.save(settings)
 
         try expect(try store.load() == settings)
+    }
+
+    private static func testSettingsTransferRoundTrip() throws {
+        let codec = SettingsTransferCodec()
+        let settings = AppSettings(
+            panelPlacement: PanelPlacementPreference(mode: .activeDisplayTopCenter),
+            shortcut: ShortcutBinding(keyCode: 12, modifiers: [.control]),
+            launchAtLogin: true,
+            showHiddenFiles: true,
+            visibleDetailColumns: [.modified, .kind, .size],
+            defaultLocationPath: "/Users/example/Projects"
+        )
+        let group = FavoriteGroup(
+            id: UUID(uuidString: "00000000-0000-0000-0000-000000000010")!,
+            name: "Work",
+            sortOrder: 0,
+            iconName: "folder"
+        )
+        let location = SavedLocation(
+            id: UUID(uuidString: "00000000-0000-0000-0000-000000000020")!,
+            displayName: "Projects",
+            bookmark: PersistedBookmark(
+                data: Data([0x01, 0x02, 0x03]),
+                originalPath: "/Users/example/Projects",
+                isSecurityScoped: true
+            ),
+            sortOrder: 0,
+            availability: .permissionDenied,
+            lastKnownExternalKind: .local,
+            groupID: group.id
+        )
+        let manifest = try codec.makeManifest(
+            settings: settings,
+            favoriteGroups: [group],
+            savedLocations: [location],
+            producerVersion: "0.1.0"
+        )
+        let data = try codec.encode(manifest)
+        let decoded = try codec.decode(data)
+        let reversed = SettingsTransferManifest(
+            producerVersion: manifest.producerVersion,
+            settings: manifest.settings,
+            favoriteGroups: Array(manifest.favoriteGroups.reversed()),
+            savedLocations: Array(manifest.savedLocations.reversed())
+        )
+
+        try expect(decoded == manifest)
+        try expect(decoded.settings.appSettings == settings)
+        try expect(try codec.encode(reversed) == data)
+        try expect(String(decoding: data, as: UTF8.self).contains("\"availability\"") == false)
+    }
+
+    private static func testSettingsTransferRelationshipValidation() throws {
+        let codec = SettingsTransferCodec()
+        let settings = SettingsTransferSettings(settings: .default)
+        let groupID = UUID(uuidString: "00000000-0000-0000-0000-000000000030")!
+        let locationID = UUID(uuidString: "00000000-0000-0000-0000-000000000040")!
+        let group = FavoriteGroup(id: groupID, name: "Work", sortOrder: 0)
+        let location = TransferSavedLocation(
+            location: SavedLocation(
+                id: locationID,
+                displayName: "Projects",
+                bookmark: PersistedBookmark(
+                    data: Data([0x01]),
+                    originalPath: "/Users/example/Projects",
+                    isSecurityScoped: true
+                ),
+                sortOrder: 0,
+                groupID: groupID
+            )
+        )
+
+        do {
+            _ = try codec.encode(
+                SettingsTransferManifest(
+                    producerVersion: "0.1.0",
+                    settings: settings,
+                    favoriteGroups: [FavoriteGroup(id: groupID, name: " ", sortOrder: 0)],
+                    savedLocations: []
+                )
+            )
+            throw ContractTestFailure("Expected empty group name to fail")
+        } catch SettingsTransferError.emptyGroupName(groupID) {
+        }
+
+        do {
+            _ = try codec.encode(
+                SettingsTransferManifest(
+                    producerVersion: "0.1.0",
+                    settings: settings,
+                    favoriteGroups: [group, group],
+                    savedLocations: []
+                )
+            )
+            throw ContractTestFailure("Expected duplicate group ID to fail")
+        } catch SettingsTransferError.duplicateGroupID(groupID) {
+        }
+
+        do {
+            _ = try codec.encode(
+                SettingsTransferManifest(
+                    producerVersion: "0.1.0",
+                    settings: settings,
+                    favoriteGroups: [group],
+                    savedLocations: [location, location]
+                )
+            )
+            throw ContractTestFailure("Expected duplicate location ID to fail")
+        } catch SettingsTransferError.duplicateLocationID(locationID) {
+        }
+
+        var duplicatePath = location
+        duplicatePath.id = UUID(uuidString: "00000000-0000-0000-0000-000000000041")!
+        duplicatePath.bookmark.originalPath = "/Users/example/Projects/../Projects"
+        do {
+            _ = try codec.encode(
+                SettingsTransferManifest(
+                    producerVersion: "0.1.0",
+                    settings: settings,
+                    favoriteGroups: [group],
+                    savedLocations: [location, duplicatePath]
+                )
+            )
+            throw ContractTestFailure("Expected duplicate normalized path to fail")
+        } catch SettingsTransferError.duplicatePath("/Users/example/Projects") {
+        }
+
+        var dangling = location
+        let missingGroupID = UUID(uuidString: "00000000-0000-0000-0000-000000000099")!
+        dangling.groupID = missingGroupID
+        do {
+            _ = try codec.encode(
+                SettingsTransferManifest(
+                    producerVersion: "0.1.0",
+                    settings: settings,
+                    favoriteGroups: [group],
+                    savedLocations: [dangling]
+                )
+            )
+            throw ContractTestFailure("Expected dangling group reference to fail")
+        } catch SettingsTransferError.danglingGroupID(missingGroupID) {
+        }
+    }
+
+    private static func testSettingsTransferValidation() throws {
+        let codec = SettingsTransferCodec()
+
+        do {
+            _ = try codec.decode(Data("not-json".utf8))
+            throw ContractTestFailure("Expected malformed transfer JSON to fail")
+        } catch SettingsTransferError.invalidDocument {
+        }
+
+        let unsupported = Data("""
+        {
+          "format": "\(SettingsTransferManifest.formatIdentifier)",
+          "schemaVersion": 2,
+          "producerVersion": "0.1.0",
+          "settings": {},
+          "favoriteGroups": [],
+          "savedLocations": []
+        }
+        """.utf8)
+        do {
+            _ = try codec.decode(unsupported)
+            throw ContractTestFailure("Expected unsupported transfer schema to fail")
+        } catch SettingsTransferError.unsupportedVersion(2) {
+        }
     }
 
     private static func testBrowserDisplayPreferences() throws {
