@@ -68,7 +68,9 @@ public final class SettingsTransferCoordinator: @unchecked Sendable {
         return try codec.encode(manifest)
     }
 
-    public func replace(with data: Data) -> Result<SettingsTransferImportResult, SettingsTransferCoordinatorError> {
+    public func preview(
+        _ data: Data
+    ) -> Result<SettingsTransferImportResult, SettingsTransferCoordinatorError> {
         let manifest: SettingsTransferManifest
         do {
             manifest = try codec.decode(data)
@@ -76,6 +78,27 @@ public final class SettingsTransferCoordinator: @unchecked Sendable {
             return .failure(.transfer(error))
         } catch {
             return .failure(.store(String(describing: error)))
+        }
+        let importedLocations = manifest.savedLocations.map(resolveImportedLocation)
+        return .success(
+            SettingsTransferImportResult(
+                settings: manifest.settings.appSettings,
+                favoriteGroups: manifest.favoriteGroups,
+                savedLocations: importedLocations,
+                unresolvedLocationCount: importedLocations.filter {
+                    ExternalLocationStateResolver.isUsable($0.availability) == false
+                }.count
+            )
+        )
+    }
+
+    public func replace(with data: Data) -> Result<SettingsTransferImportResult, SettingsTransferCoordinatorError> {
+        let imported: SettingsTransferImportResult
+        switch preview(data) {
+        case .success(let preview):
+            imported = preview
+        case .failure(let error):
+            return .failure(error)
         }
 
         let previousGroups: [FavoriteGroup]
@@ -87,12 +110,11 @@ public final class SettingsTransferCoordinator: @unchecked Sendable {
             return .failure(.store(String(describing: error)))
         }
 
-        let importedLocations = manifest.savedLocations.map(resolveImportedLocation)
         let transaction = invocationController.commitImportedSettings(
-            manifest.settings.appSettings,
+            imported.settings,
             persistAdditionalStores: {
-                try self.favoriteGroupStore.saveFavoriteGroups(manifest.favoriteGroups)
-                try self.bookmarkStore.saveSavedLocations(importedLocations)
+                try self.favoriteGroupStore.saveFavoriteGroups(imported.favoriteGroups)
+                try self.bookmarkStore.saveSavedLocations(imported.savedLocations)
             },
             rollbackAdditionalStores: {
                 var failures: [String] = []
@@ -114,16 +136,7 @@ public final class SettingsTransferCoordinator: @unchecked Sendable {
 
         switch transaction {
         case .success:
-            return .success(
-                SettingsTransferImportResult(
-                    settings: manifest.settings.appSettings,
-                    favoriteGroups: manifest.favoriteGroups,
-                    savedLocations: importedLocations,
-                    unresolvedLocationCount: importedLocations.filter {
-                        ExternalLocationStateResolver.isUsable($0.availability) == false
-                    }.count
-                )
-            )
+            return .success(imported)
         case .failure(let error):
             return .failure(.transaction(error))
         }

@@ -169,10 +169,11 @@ final class SavedLocationTableDataSource: NSObject, NSTableViewDataSource, NSTab
             label.trailingAnchor.constraint(equalTo: cell.trailingAnchor, constant: -8).isActive = true
             cell.toolTip = location.bookmark.originalPath
         } else {
+            let accessibilityDescription = location.availability.accessibilityDescription
             let badge = NSImageView()
             badge.image = NSImage(
                 systemSymbolName: "exclamationmark.triangle.fill",
-                accessibilityDescription: location.availability.rawValue
+                accessibilityDescription: accessibilityDescription
             )
             badge.contentTintColor = .systemOrange
             badge.symbolConfiguration = .init(
@@ -188,7 +189,8 @@ final class SavedLocationTableDataSource: NSObject, NSTableViewDataSource, NSTab
                 badge.widthAnchor.constraint(equalToConstant: 13),
                 badge.heightAnchor.constraint(equalToConstant: 13)
             ])
-            cell.toolTip = "\(location.bookmark.originalPath)\n\(location.availability.rawValue)"
+            cell.toolTip = "\(location.bookmark.originalPath)\n\(accessibilityDescription)"
+            cell.setAccessibilityLabel("\(location.displayName), \(accessibilityDescription)")
         }
         return cell
     }

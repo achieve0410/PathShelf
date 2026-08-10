@@ -11,7 +11,7 @@ private let appProcessProbeStart = Date()
 
 @main
 @MainActor
-final class PathShelfApp: NSObject, NSApplicationDelegate {
+final class PathShelfApp: NSObject, NSApplicationDelegate, NSMenuItemValidation {
     private let settingsStore: SettingsStore
     private var terminationSignalHandler: TerminationSignalHandler?
     private let hotKeyController = HotKeyRegistrationController()
@@ -104,6 +104,20 @@ final class PathShelfApp: NSObject, NSApplicationDelegate {
         openSettings()
     }
 
+    @objc func reauthorizeSelectedFavoriteFromMenu(_ sender: Any?) {
+        if panelController?.isPanelVisible != true {
+            togglePanelFromFallback()
+        }
+        panelController?.reauthorizeSelectedFavorite()
+    }
+
+    func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
+        if menuItem.action == #selector(reauthorizeSelectedFavoriteFromMenu(_:)) {
+            return panelController != nil
+        }
+        return true
+    }
+
     @objc func closeActiveWindowFromMenu(_ sender: Any?) {
         if settingsWindowController?.window?.isKeyWindow == true {
             settingsWindowController?.close()
@@ -120,6 +134,16 @@ final class PathShelfApp: NSObject, NSApplicationDelegate {
         }
         let controller = settingsWindowController ?? SettingsWindowController(
             invocationController: invocationController,
+            transferCoordinator: SettingsTransferCoordinator(
+                invocationController: invocationController,
+                bookmarkStore: JSONBookmarkStore(storageURL: ApplicationPaths.bookmarksURL()),
+                favoriteGroupStore: JSONFavoriteGroupStore(
+                    storageURL: ApplicationPaths.favoriteGroupsURL()
+                )
+            ),
+            producerVersion: Bundle.main.object(
+                forInfoDictionaryKey: "CFBundleShortVersionString"
+            ) as? String ?? "development",
             onClose: { [weak self] in
                 self?.synchronizeActivationPolicy()
             },
@@ -248,6 +272,19 @@ final class PathShelfApp: NSObject, NSApplicationDelegate {
         let statusIconReady = statusItemController?.hasVisibleIcon == true
         let welcomeVisible = settingsWindowController?.window?.isVisible == true
         let browserPreferencesReady = settingsWindowController?.browserPreferencesReady == true
+        let configurationTransferReady = settingsWindowController?.configurationTransferReady == true
+        let configurationTransferAccessibilityReady =
+            settingsWindowController?.runConfigurationTransferAccessibilityProbe() == true
+        let keyboardReauthorizationReady = NSApp.mainMenu?.items
+            .first(where: { $0.title == "Favorites" })?
+            .submenu?.items
+            .first(where: { $0.action == #selector(reauthorizeSelectedFavoriteFromMenu(_:)) })
+            .map {
+                $0.keyEquivalent == "r"
+                    && $0.keyEquivalentModifierMask == [.command, .shift]
+                    && $0.target === self
+                    && validateMenuItem($0)
+            } == true
         let loadedPlacement = invocationController?.settings.panelPlacement.mode ?? .cursorAdjacent
         let loadedShortcut = invocationController?.settings.shortcut ?? .default
 
@@ -257,6 +294,11 @@ final class PathShelfApp: NSObject, NSApplicationDelegate {
         smokePrint("SMOKE statusIconReady=\(statusIconReady)")
         smokePrint("SMOKE welcomeVisible=\(welcomeVisible)")
         smokePrint("SMOKE browserPreferencesReady=\(browserPreferencesReady)")
+        smokePrint("SMOKE configurationTransferReady=\(configurationTransferReady)")
+        smokePrint(
+            "SMOKE configurationTransferAccessibilityReady=\(configurationTransferAccessibilityReady)"
+        )
+        smokePrint("SMOKE keyboardReauthorizationReady=\(keyboardReauthorizationReady)")
         smokePrint("SMOKE loadedPlacement=\(loadedPlacement.rawValue)")
         smokePrint("SMOKE loadedShortcutValid=\(loadedShortcut.isValidForGlobalRegistration)")
         settingsWindowController?.close()
@@ -308,6 +350,9 @@ final class PathShelfApp: NSObject, NSApplicationDelegate {
             teardownCount: 0
         )
         let interactionProbe = await panelController?.runInteractionProbe()
+        let configurationTransferProbe = settingsWindowController?.runConfigurationTransferProbe(
+            in: fixtureURL
+        )
         panelController?.hide()
         let hidden = panelController?.isPanelVisible == false
 
@@ -330,6 +375,9 @@ final class PathShelfApp: NSObject, NSApplicationDelegate {
         smokePrint("SMOKE browserSelectionClearedOnTeardown=\(browserSnapshot.selectedItemName == nil)")
         smokePrint("SMOKE browserConflictDefaultSkip=\(browserSnapshot.lastOperationStatus == .skipped)")
         smokePrint("SMOKE savedLocationRoundTrip=\(browserSnapshot.savedLocationNames.contains("Fixture Renamed"))")
+        smokePrint("SMOKE configurationTransferRoundTrip=\(configurationTransferProbe?.roundTripPassed == true)")
+        smokePrint("SMOKE configurationTransferFavoriteIncluded=\(configurationTransferProbe?.favoriteIncluded == true)")
+        smokePrint("SMOKE configurationTransferMalformedRejected=\(configurationTransferProbe?.malformedRejected == true)")
         smokePrint("SMOKE previewTeardownCount=\(browserSnapshot.teardownCount >= 1)")
         smokePrint("SMOKE lifecycleObserversStopped=\(browserSnapshot.lifecycleDiagnostics.activeVisibleDirectoryObserverCount == 0 && browserSnapshot.lifecycleDiagnostics.activeVolumeObserverCount == 0)")
         smokePrint("SMOKE lifecycleTimersZero=\(browserSnapshot.lifecycleDiagnostics.timerCount == 0)")
@@ -528,6 +576,19 @@ enum MainMenuFactory {
         ).target = commandTarget
         fileMenuItem.submenu = fileMenu
         mainMenu.addItem(fileMenuItem)
+
+        let favoritesMenuItem = NSMenuItem()
+        favoritesMenuItem.title = "Favorites"
+        let favoritesMenu = NSMenu(title: "Favorites")
+        let reauthorizeItem = favoritesMenu.addItem(
+            withTitle: "Choose New Folder for Selected Favorite…",
+            action: #selector(PathShelfApp.reauthorizeSelectedFavoriteFromMenu(_:)),
+            keyEquivalent: "r"
+        )
+        reauthorizeItem.keyEquivalentModifierMask = [.command, .shift]
+        reauthorizeItem.target = commandTarget
+        favoritesMenuItem.submenu = favoritesMenu
+        mainMenu.addItem(favoritesMenuItem)
         return mainMenu
     }
 }
@@ -625,6 +686,12 @@ final class FloatingPanelController {
 
     func runInteractionProbe() async -> (passed: Bool, diagnostics: String) {
         await contentView?.runInteractionProbe() ?? (false, "unavailable")
+    }
+
+    func reauthorizeSelectedFavorite() {
+        Task {
+            _ = await contentView?.reauthorizeSelectedOrFirstUnavailableFavorite()
+        }
     }
 
     func showAndWaitForInteractiveProbe(

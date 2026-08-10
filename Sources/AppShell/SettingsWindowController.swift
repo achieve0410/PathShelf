@@ -16,6 +16,7 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate, NSTo
     ]
 
     private let invocationController: InvocationController
+    private let configurationTransferController: ConfigurationTransferController
     private let onClose: () -> Void
     private let onApply: () -> Void
     private let onGrantFolderAccess: (URL) throws -> Void
@@ -42,17 +43,33 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate, NSTo
     )
     private let paneContainer = NSView()
     private let statusLabel = NSTextField(labelWithString: "")
+    private lazy var exportConfigurationButton = NSButton(
+        title: "Export Configuration…",
+        target: configurationTransferController,
+        action: #selector(ConfigurationTransferController.exportConfiguration(_:))
+    )
+    private lazy var importConfigurationButton = NSButton(
+        title: "Import Configuration…",
+        target: configurationTransferController,
+        action: #selector(ConfigurationTransferController.importConfiguration(_:))
+    )
     private var panes: [NSView] = []
     private var pendingDefaultLocationPath: String?
     private var selectedPaneIndex = 0
 
     init(
         invocationController: InvocationController,
+        transferCoordinator: SettingsTransferCoordinator,
+        producerVersion: String,
         onClose: @escaping () -> Void,
         onApply: @escaping () -> Void,
         onGrantFolderAccess: @escaping (URL) throws -> Void
     ) {
         self.invocationController = invocationController
+        self.configurationTransferController = ConfigurationTransferController(
+            coordinator: transferCoordinator,
+            producerVersion: producerVersion
+        )
         self.onClose = onClose
         self.onApply = onApply
         self.onGrantFolderAccess = onGrantFolderAccess
@@ -71,6 +88,16 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate, NSTo
         window.isReleasedWhenClosed = false
         window.contentMinSize = CGSize(width: 620, height: 500)
         super.init(window: window)
+        configurationTransferController.onStatus = { [weak self] message, tooltip in
+            self?.setStatus(message, tooltip: tooltip)
+        }
+        configurationTransferController.onImport = { [weak self] _ in
+            guard let self else {
+                return
+            }
+            syncFromSettings(updateStatus: false)
+            onApply()
+        }
         window.delegate = self
         window.contentView = makeContentView()
         configureToolbar(for: window)
@@ -102,8 +129,38 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate, NSTo
             && accessGuideLabel.stringValue.contains("persistent access")
     }
 
+    var configurationTransferReady: Bool {
+        exportConfigurationButton.identifier?.rawValue
+            == "PathShelf.Settings.ExportConfiguration"
+            && importConfigurationButton.identifier?.rawValue
+                == "PathShelf.Settings.ImportConfiguration"
+            && statusLabel.identifier?.rawValue == "PathShelf.Settings.Status"
+            && exportConfigurationButton.action
+                == #selector(ConfigurationTransferController.exportConfiguration(_:))
+            && importConfigurationButton.action
+                == #selector(ConfigurationTransferController.importConfiguration(_:))
+    }
+
+    func runConfigurationTransferProbe(in directory: URL) -> ConfigurationTransferProbeResult {
+        configurationTransferController.runProbe(in: directory)
+    }
+
+    func runConfigurationTransferAccessibilityProbe() -> Bool {
+        let message = "Configuration transfer accessibility check."
+        setStatus(message, tooltip: nil)
+        return statusLabel.stringValue == message && statusLabel.toolTip == message
+    }
+
     private func makeContentView() -> NSView {
         let root = SemanticSurfaceView(kind: .content)
+        placementPopup.identifier = .init("PathShelf.Settings.PanelPlacement")
+        keyPopup.identifier = .init("PathShelf.Settings.ShortcutKey")
+        launchAtLoginCheckbox.identifier = .init("PathShelf.Settings.LaunchAtLogin")
+        showHiddenFilesCheckbox.identifier = .init("PathShelf.Settings.ShowHiddenFiles")
+        defaultLocationLabel.identifier = .init("PathShelf.Settings.DefaultLocation")
+        statusLabel.identifier = .init("PathShelf.Settings.Status")
+        exportConfigurationButton.identifier = .init("PathShelf.Settings.ExportConfiguration")
+        importConfigurationButton.identifier = .init("PathShelf.Settings.ImportConfiguration")
         placementPopup.addItems(withTitles: ["Cursor adjacent", "Top center"])
         keyPopup.addItems(withTitles: ShortcutKeyChoice.supported.map(\.displayName))
 
@@ -139,6 +196,13 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate, NSTo
         defaultControls.orientation = .horizontal
         defaultControls.alignment = .centerY
         defaultControls.spacing = 8
+
+        let configurationControls = NSStackView(
+            views: [exportConfigurationButton, importConfigurationButton]
+        )
+        configurationControls.orientation = .horizontal
+        configurationControls.alignment = .centerY
+        configurationControls.spacing = 8
 
         let chooseAccessibleFolder = NSButton(
             title: "Add Folder…",
@@ -189,6 +253,13 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate, NSTo
                 settingsSection([
                     row("Panel placement", placementPopup),
                     indentedControl(launchAtLoginCheckbox)
+                ]),
+                settingsSection([
+                    settingsActionRow(
+                        title: "Configuration",
+                        detail: "Move settings and Favorites between Macs.",
+                        control: configurationControls
+                    )
                 ])
             ]
         )
@@ -297,6 +368,21 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate, NSTo
         ])
         showPane(at: selectedPaneIndex)
         return root
+    }
+
+    private func setStatus(_ message: String, tooltip: String?) {
+        statusLabel.stringValue = message
+        statusLabel.toolTip = tooltip.map { "\(message)\n\($0)" } ?? message
+        if let application = NSApp {
+            NSAccessibility.post(
+                element: application,
+                notification: .announcementRequested,
+                userInfo: [
+                    .announcement: message,
+                    .priority: NSAccessibilityPriorityLevel.high.rawValue
+                ]
+            )
+        }
     }
 
     private func makePane(title: String, subtitle: String, views: [NSView]) -> NSView {
@@ -582,9 +668,14 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate, NSTo
             }
             do {
                 try onGrantFolderAccess(url)
-                statusLabel.stringValue = "Access granted and \(url.lastPathComponent) was added to Favorites."
+                setStatus(
+                    "Access granted and \(url.lastPathComponent) was added to Favorites.",
+                    tooltip: nil
+                )
             } catch {
-                statusLabel.stringValue = String(describing: error)
+                let message = (error as? FileBrowserError)?.description
+                    ?? "Could not grant folder access. The selected folder could not be saved."
+                setStatus(message, tooltip: nil)
             }
         }
     }

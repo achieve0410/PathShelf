@@ -20,6 +20,8 @@ struct PanelContractTests {
             ("saved location reauthorization rejects unsupported paths", testSavedLocationReauthorizationRejectsUnsupportedPath),
             ("saved location reauthorization rolls back persistence failure", testSavedLocationReauthorizationPersistenceFailure),
             ("unavailable saved locations remain visible without false success", testUnavailableSavedLocation),
+            ("navigation errors use bounded human copy", testNavigationErrorAccessibilityCopy),
+            ("unavailable saved location errors use human accessibility copy", testUnavailableErrorAccessibilityCopy),
             ("up navigation is bounded by home root", testUpNavigationStopsAtHomeRoot),
             ("saved location navigation is bounded by authorized root and closes on exit", testSavedLocationBoundaryAndScopeLifetime),
             ("saved location rejects root and protected system paths", testSavedLocationPolicyRejectsUnsupportedRoots),
@@ -457,6 +459,40 @@ struct PanelContractTests {
         try expect(model.savedLocations.first?.displayName == "Missing")
         try expect(model.savedLocations.first?.availability == .unavailable)
         try expect(model.snapshot.lastErrorMessage?.contains("unavailable") == true)
+    }
+
+    private static func testUnavailableErrorAccessibilityCopy() throws {
+        let error = FileBrowserError.selectedLocationUnavailable(
+            .permissionDenied,
+            "/Users/example/Unavailable"
+        )
+        try expect(
+            error.description
+                == "Saved location needs folder access on this Mac: /Users/example/Unavailable"
+        )
+    }
+
+    @MainActor
+    private static func testNavigationErrorAccessibilityCopy() async throws {
+        let fixture = try TemporaryDirectory()
+        let model = makeModel(
+            home: fixture.url,
+            enumerate: { _ in
+                throw NSError(
+                    domain: NSCocoaErrorDomain,
+                    code: NSFileReadNoPermissionError,
+                    userInfo: [NSFilePathErrorKey: "/private/example"]
+                )
+            }
+        )
+
+        await model.loadInitialState()
+        guard let message = model.snapshot.lastErrorMessage else {
+            throw PanelContractFailure("Expected a bounded navigation error")
+        }
+        try expect(message.contains("NSCocoaErrorDomain") == false)
+        try expect(message.contains("UserInfo") == false)
+        try expect(message.contains("/private/example") == false)
     }
 
     @MainActor

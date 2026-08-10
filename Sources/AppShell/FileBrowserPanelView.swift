@@ -227,6 +227,15 @@ final class PanelContentView: NSView, NSMenuItemValidation {
         }?.items.first(where: { $0.title == "Reveal in Finder" })
         let favoriteRevealReady = favoriteRevealItem?.action == #selector(revealSavedLocation(_:))
             && favoriteRevealItem?.target?.responds(to: #selector(revealSavedLocation(_:))) == true
+        let favoriteReauthorizationItem = model.savedLocations.first.map {
+            makeFavoriteContextMenu(for: .location($0))
+        }?.items.first(where: { $0.title == "Choose New Folder…" })
+        let favoriteReauthorizationReady = favoriteReauthorizationItem?.identifier?.rawValue
+            == "PathShelf.Favorites.ChooseNewFolder"
+            && favoriteReauthorizationItem?.action == #selector(reauthorizeSavedLocation(_:))
+            && favoriteReauthorizationItem?.target?.responds(
+                to: #selector(reauthorizeSavedLocation(_:))
+            ) == true
 
         var contextFavoriteAdded = false
         if let directoryIndex = model.items.firstIndex(where: { $0.kind == .directory }),
@@ -267,12 +276,14 @@ final class PanelContentView: NSView, NSMenuItemValidation {
                 && fileMenuTargetsReady
                 && openWithTargetsReady
                 && favoriteRevealReady
+                && favoriteReauthorizationReady
                 && contextFavoriteAdded
                 && spaceQuickLookReady,
             "headerSortChanged=\(headerSortChanged) contextSelected=\(contextSelected) "
                 + "contextCleared=\(contextCleared) quickLookMenuRemoved=\(quickLookMenuRemoved) "
                 + "fileMenuTargetsReady=\(fileMenuTargetsReady) openWithTargetsReady=\(openWithTargetsReady) "
                 + "favoriteRevealReady=\(favoriteRevealReady) "
+                + "favoriteReauthorizationReady=\(favoriteReauthorizationReady) "
                 + "contextFavoriteAdded=\(contextFavoriteAdded) spaceQuickLookReady=\(spaceQuickLookReady) "
                 + "quickLook=\(quickLookDiagnostics)"
         )

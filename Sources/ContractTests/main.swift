@@ -12,12 +12,14 @@ struct ContractTests {
             ("favorite group round-trip preserves explicit order", testFavoriteGroupRoundTrip),
             ("legacy favorite groups decode with the default icon", testLegacyFavoriteGroupIconCompatibility),
             ("legacy favorites without a group decode into Default Group", testLegacyFavoriteGroupCompatibility),
+            ("saved location availability uses human accessibility copy", testAvailabilityAccessibilityCopy),
             ("default settings prefer cursor-adjacent placement", testDefaultSettings),
             ("settings round-trip through JSON storage", testSettingsRoundTrip),
             ("settings transfer manifest validates relationships", testSettingsTransferRelationshipValidation),
             ("settings transfer manifest round-trips deterministically", testSettingsTransferRoundTrip),
             ("settings transfer manifest rejects incompatible documents", testSettingsTransferValidation),
             ("settings transfer import replaces all stores", testSettingsTransferImport),
+            ("settings transfer preview makes no writes", testSettingsTransferPreview),
             ("settings transfer import rolls back all stores", testSettingsTransferImportRollback),
             ("settings transfer import rejects shortcut conflicts before writes", testSettingsTransferShortcutConflict),
             ("settings transfer import rejects unavailable launch-at-login", testSettingsTransferLaunchUnavailable),
@@ -168,6 +170,25 @@ struct ContractTests {
         let decoded = try JSONDecoder().decode(SavedLocation.self, from: Data(json.utf8))
 
         try expect(decoded.groupID == nil)
+    }
+
+    private static func testAvailabilityAccessibilityCopy() throws {
+        try expect(
+            SavedLocation.Availability.permissionDenied.accessibilityDescription
+                == "Needs folder access on this Mac"
+        )
+        try expect(
+            SavedLocation.Availability.staleBookmark.accessibilityDescription
+                == "Needs folder access on this Mac"
+        )
+        try expect(
+            SavedLocation.Availability.networkUnavailable.accessibilityDescription
+                == "Network location unavailable"
+        )
+        try expect(
+            SavedLocation.Availability.iCloudPlaceholder.accessibilityDescription
+                == "Available in iCloud"
+        )
     }
 
     private static func testDefaultSettings() throws {
@@ -395,6 +416,36 @@ struct ContractTests {
         try expect(groups.groups == fixture.groups)
         try expect(bookmarks.locations.map(\.id) == fixture.locations.map(\.id))
         try expect(imported.unresolvedLocationCount == 1)
+    }
+
+    private static func testSettingsTransferPreview() throws {
+        let previous = AppSettings.default
+        let candidate = AppSettings(showHiddenFiles: true)
+        let fixture = try transferFixture(settings: candidate)
+        let settingsStore = FakeSettingsStore(initial: previous)
+        let hotKey = FakeHotKeyRegistrar(activeBinding: previous.shortcut)
+        let invocation = InvocationController(settingsStore: settingsStore, hotKeyController: hotKey)
+        invocation.loadAndRegister()
+        let bookmarks = FakeBookmarkStore(initial: [])
+        let groups = FakeFavoriteGroupStore(initial: [])
+        let coordinator = SettingsTransferCoordinator(
+            invocationController: invocation,
+            bookmarkStore: bookmarks,
+            favoriteGroupStore: groups
+        )
+
+        guard case .success(let preview) = coordinator.preview(fixture.data) else {
+            throw ContractTestFailure("Expected settings transfer preview to succeed")
+        }
+
+        try expect(preview.settings == candidate)
+        try expect(preview.favoriteGroups == fixture.groups)
+        try expect(preview.savedLocations.map(\.id) == fixture.locations.map(\.id))
+        try expect(preview.unresolvedLocationCount == 1)
+        try expect(bookmarks.saveCount == 0)
+        try expect(groups.saveCount == 0)
+        try expect(settingsStore.settings == previous)
+        try expect(invocation.settings == previous)
     }
 
     private static func testSettingsTransferImportRollback() throws {

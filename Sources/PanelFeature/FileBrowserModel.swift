@@ -81,7 +81,10 @@ public enum FileBrowserError: Error, Equatable, Sendable, CustomStringConvertibl
         case .noSelection:
             return "No item is selected."
         case .selectedLocationUnavailable(let availability, let path):
-            return "Saved location is \(availability.rawValue): \(path)"
+            let description = availability.accessibilityDescription
+            let sentenceFragment =
+                description.prefix(1).lowercased() + String(description.dropFirst())
+            return "Saved location \(sentenceFragment): \(path)"
         case .savedLocationMissing(let id):
             return "Saved location is missing: \(id.uuidString)"
         case .openPanelCancelled:
@@ -701,7 +704,7 @@ public final class FileBrowserModel {
                 return $0.sortOrder < $1.sortOrder
             }
         } catch {
-            lastErrorMessage = String(describing: error)
+            lastErrorMessage = "Could not load Favorites."
             savedLocations = []
         }
     }
@@ -710,7 +713,7 @@ public final class FileBrowserModel {
         do {
             favoriteGroups = normalizedFavoriteGroups(try environment.loadFavoriteGroups())
         } catch {
-            lastErrorMessage = String(describing: error)
+            lastErrorMessage = "Could not load Favorite groups."
             favoriteGroups = []
         }
     }
@@ -743,7 +746,7 @@ public final class FileBrowserModel {
             }
             items = []
             availability = .unavailable(.unavailable, directoryURL.path)
-            lastErrorMessage = String(describing: error)
+            lastErrorMessage = "Could not open this folder."
             replaceVisibleDirectoryMonitorRoot()
         }
         isLoading = false

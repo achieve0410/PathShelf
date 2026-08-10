@@ -14,8 +14,8 @@ swift run ServiceContractTests
 swift run PanelContractTests
 swift run EventContractTests
 
-if rg -n "NSEvent\\.addGlobalMonitorForEvents|CGEventTap|AXIsProcessTrusted|Accessibility" Sources Package.swift; then
-  echo "Forbidden global event or Accessibility path found" >&2
+if rg -n "NSEvent\\.addGlobalMonitorForEvents|CGEventTap|CGPreflightListenEventAccess|CGRequestListenEventAccess|AXIsProcessTrusted|AXUIElement(Create|Copy|Perform)|AXObserver(Create|AddNotification)|kAXTrustedCheckOptionPrompt|import ApplicationServices" Sources Package.swift; then
+  echo "Forbidden global event or privileged Accessibility path found" >&2
   exit 1
 fi
 
