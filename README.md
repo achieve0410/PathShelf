@@ -4,6 +4,10 @@ PathShelf is an offline-first macOS 15+ Apple Silicon utility for fast access to
 
 The app is intentionally local-only: no telemetry, no accounts, no update checks, and no app-initiated network client. iCloud placeholder downloads and network shares remain OS/provider behavior, not app-owned traffic.
 
+<p align="center">
+  <img src="docs/images/pathshelf-panel.png" alt="PathShelf floating file panel with grouped Favorites, file metadata, and a clickable path bar">
+</p>
+
 ## Project Status
 
 PathShelf v0.1.0 is the first public source release. GitHub provides the source
@@ -29,6 +33,52 @@ claims are backed by source, binary, and runtime checks rather than telemetry.
 - Settings for panel placement, shortcut key/modifiers, and launch at login.
 - Launch at login via `SMAppService.mainApp`, with user-visible status: enabled, requires approval, not registered, or app service not found.
 - Saved locations, home navigation, basic panel file browsing, safe operation contracts, Quick Look/thumbnail contracts, and lifecycle teardown diagnostics.
+
+## Screenshots
+
+### Favorites and file actions
+
+Use Favorites as a grouped launcher, open folders in familiar tools, and work
+with files through native context menus.
+
+<table>
+  <tr>
+    <td width="33%" align="center">
+      <img src="docs/images/favorite-open-with.png" alt="Favorite context menu with Open With choices for Finder, Visual Studio Code, iTerm2, Terminal, and Google Chrome">
+      <br><sub>Open a Favorite in Finder or an installed app.</sub>
+    </td>
+    <td width="33%" align="center">
+      <img src="docs/images/file-actions.png" alt="File context menu with open, reveal, create, rename, copy, move, and Trash actions">
+      <br><sub>Use native file actions with safe Trash behavior.</sub>
+    </td>
+    <td width="33%" align="center">
+      <img src="docs/images/favorite-group-icons.png" alt="Favorite group menu with folder, work, personal, project, archive, and star icons">
+      <br><sub>Organize Favorites into named groups with distinct icons.</sub>
+    </td>
+  </tr>
+</table>
+
+### Settings
+
+Choose where the panel appears, configure its global shortcut, transfer your
+configuration, and control which file details are visible.
+
+<table>
+  <tr>
+    <td width="33%" align="center">
+      <img src="docs/images/settings-general.png" alt="PathShelf General settings for panel placement, launch at login, and configuration transfer">
+      <br><sub>Panel placement, launch at login, and configuration transfer.</sub>
+    </td>
+    <td width="33%" align="center">
+      <img src="docs/images/settings-shortcut.png" alt="PathShelf Shortcut settings for choosing the global shortcut key and modifiers">
+      <br><sub>A configurable global shortcut opens the panel from any app.</sub>
+    </td>
+    <td width="33%" align="center">
+      <img src="docs/images/settings-browser.png" alt="PathShelf Browser settings for hidden files, visible metadata columns, and the default location">
+      <br><sub>Hidden files, metadata columns, and the default folder.</sub>
+    </td>
+  </tr>
+</table>
 
 ## Configuration Transfer
 
