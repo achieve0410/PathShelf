@@ -10,30 +10,53 @@ extension PanelContentView {
     func refreshTables() {
         pathControl.url = model.currentDirectoryURL
         pathControl.toolTip = model.currentDirectoryURL.path
+        if searchField.stringValue != model.filterQuery {
+            searchField.stringValue = model.filterQuery
+        }
         statusLabel.stringValue = statusText()
+        statusLabel.toolTip = statusLabel.stringValue
+        statusLabel.setAccessibilityValue(statusLabel.stringValue)
         sidebarTable.reloadData()
         fileTable.reloadData()
         updateBrowserState()
         updateWindowTitle()
         if let selectedIndex = model.selectedIndex {
             fileTable.selectRowIndexes(IndexSet(integer: selectedIndex), byExtendingSelection: false)
+        } else {
+            fileTable.deselectAll(nil)
         }
     }
 
     private func updateBrowserState() {
         guard model.isLoading == false else {
-            browserStateView.isHidden = true
+            fileScrollView?.isHidden = true
+            browserStateView.show(
+                symbolName: "arrow.triangle.2.circlepath",
+                title: "Loading…",
+                detail: nil,
+                tintColor: .secondaryLabelColor
+            )
             return
         }
         switch model.availability {
-        case .available where model.items.isEmpty:
+        case .available where model.unfilteredItemCount == 0:
+            fileScrollView?.isHidden = true
             browserStateView.show(
                 symbolName: "folder",
                 title: "This folder is empty",
                 detail: nil,
                 tintColor: .secondaryLabelColor
             )
+        case .available where model.items.isEmpty && model.filterQuery.isEmpty == false:
+            fileScrollView?.isHidden = true
+            browserStateView.show(
+                symbolName: "magnifyingglass",
+                title: "No matching items",
+                detail: "No filenames match “\(model.filterQuery)”.",
+                tintColor: .secondaryLabelColor
+            )
         case .unavailable:
+            fileScrollView?.isHidden = true
             browserStateView.show(
                 symbolName: "exclamationmark.triangle",
                 title: "This location isn’t available",
@@ -41,6 +64,7 @@ extension PanelContentView {
                 tintColor: .systemOrange
             )
         case .available:
+            fileScrollView?.isHidden = false
             browserStateView.isHidden = true
         }
     }
@@ -55,9 +79,18 @@ extension PanelContentView {
         if let error = model.lastErrorMessage {
             return error
         }
+        if model.isLoading {
+            return "Loading…"
+        }
         switch model.availability {
         case .available:
-            return model.items.isEmpty ? "Empty folder" : "\(model.items.count) items"
+            if model.unfilteredItemCount == 0 {
+                return "Empty folder"
+            }
+            if model.filterQuery.isEmpty == false {
+                return "\(model.items.count) of \(model.unfilteredItemCount) items"
+            }
+            return "\(model.items.count) items"
         case .unavailable(let availability, let path):
             return "\(availability.accessibilityDescription): \(path)"
         }

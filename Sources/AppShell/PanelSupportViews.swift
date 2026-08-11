@@ -7,6 +7,7 @@ final class BrowserStateView: NSView {
     private let symbolView = NSImageView()
     private let titleLabel = NSTextField(labelWithString: "")
     private let detailLabel = NSTextField(wrappingLabelWithString: "")
+    private(set) var currentTitle = ""
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
@@ -45,16 +46,29 @@ final class BrowserStateView: NSView {
     ) {
         symbolView.image = NSImage(systemSymbolName: symbolName, accessibilityDescription: title)
         symbolView.contentTintColor = tintColor
+        currentTitle = title
         titleLabel.stringValue = title
         detailLabel.stringValue = detail ?? ""
         detailLabel.isHidden = detail?.isEmpty != false
         toolTip = [title, detail].compactMap { $0 }.joined(separator: ". ")
+        setAccessibilityElement(true)
+        setAccessibilityRole(.group)
+        setAccessibilityLabel(toolTip)
         isHidden = false
     }
 
     @available(*, unavailable)
     required init?(coder: NSCoder) {
         nil
+    }
+}
+
+@MainActor
+final class FilterSearchField: NSSearchField {
+    var onEscape: (() -> Void)?
+
+    override func cancelOperation(_ sender: Any?) {
+        onEscape?()
     }
 }
 
@@ -73,6 +87,11 @@ final class PanelFocusView: NSView {
     }
 
     override func keyDown(with event: NSEvent) {
+        if event.modifierFlags.intersection(.deviceIndependentFlagsMask).contains(.command),
+           event.charactersIgnoringModifiers?.lowercased() == "f" {
+            contentView?.focusSearchField()
+            return
+        }
         switch event.keyCode {
         case UInt16(kVK_Escape):
             onEscape()
@@ -172,6 +191,7 @@ final class KeyHandlingTableView: NSTableView {
     var onReturn: (() -> Void)?
     var onSpace: (() -> Void)?
     var onDelete: (() -> Void)?
+    var onFind: (() -> Void)?
     var onContextRow: ((Int?) -> Void)?
     var contextMenuProvider: ((Int?) -> NSMenu?)?
 
@@ -189,6 +209,11 @@ final class KeyHandlingTableView: NSTableView {
     }
 
     override func keyDown(with event: NSEvent) {
+        if event.modifierFlags.intersection(.deviceIndependentFlagsMask).contains(.command),
+           event.charactersIgnoringModifiers?.lowercased() == "f" {
+            onFind?()
+            return
+        }
         switch event.keyCode {
         case UInt16(kVK_Escape):
             onEscape?()

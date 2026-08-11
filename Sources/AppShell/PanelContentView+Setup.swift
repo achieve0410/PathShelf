@@ -4,8 +4,10 @@ import SettingsFeature
 
 extension PanelContentView {
     func setup() {
-        sidebarTable.onEscape = { [weak self] in self?.onEscape() }
-        fileTable.onEscape = { [weak self] in self?.onEscape() }
+        sidebarTable.onEscape = { [weak self] in self?.handleEscape() }
+        sidebarTable.onFind = { [weak self] in self?.focusSearchField() }
+        fileTable.onEscape = { [weak self] in self?.handleEscape() }
+        fileTable.onFind = { [weak self] in self?.focusSearchField() }
         fileTable.onReturn = { [weak self] in self?.openSelection() }
         fileTable.onSpace = { [weak self] in self?.toggleQuickLookFromKeyboard() }
         fileTable.onDelete = { [weak self] in self?.trashSelection() }
@@ -86,18 +88,57 @@ extension PanelContentView {
         fileScroll.documentView = fileTable
         configureFileTable()
         let fileSurface = SemanticSurfaceView(kind: .fileList)
+        let searchBar = SemanticSurfaceView(kind: .footer)
+        searchBarView = searchBar
+        searchField.placeholderString = "Filter current folder"
+        searchField.sendsSearchStringImmediately = true
+        searchField.sendsWholeSearchString = false
+        searchField.target = self
+        searchField.action = #selector(filterCurrentDirectory(_:))
+        searchField.toolTip = "Filter filenames in the current folder (Command-F)"
+        searchField.setAccessibilityLabel("Filter current folder")
+        searchField.setAccessibilityIdentifier("pathshelf.filter.current-folder")
+        searchField.onEscape = { [weak self] in self?.handleEscape() }
+        let searchSeparator = NSBox()
+        searchSeparator.boxType = .separator
+        searchBar.translatesAutoresizingMaskIntoConstraints = false
+        searchField.translatesAutoresizingMaskIntoConstraints = false
+        searchSeparator.translatesAutoresizingMaskIntoConstraints = false
+        searchBar.addSubview(searchField)
+        searchBar.addSubview(searchSeparator)
         fileScroll.translatesAutoresizingMaskIntoConstraints = false
         browserStateView.translatesAutoresizingMaskIntoConstraints = false
+        fileSurface.addSubview(searchBar)
         fileSurface.addSubview(fileScroll)
         fileSurface.addSubview(browserStateView)
+        let preferredSearchWidth = searchField.widthAnchor.constraint(equalToConstant: 320)
+        preferredSearchWidth.priority = .defaultHigh
         NSLayoutConstraint.activate([
+            searchBar.leadingAnchor.constraint(equalTo: fileSurface.leadingAnchor),
+            searchBar.trailingAnchor.constraint(equalTo: fileSurface.trailingAnchor),
+            searchBar.topAnchor.constraint(equalTo: fileSurface.topAnchor),
+            searchBar.heightAnchor.constraint(equalToConstant: VisualMetrics.searchBarHeight),
+            searchField.leadingAnchor.constraint(
+                equalTo: searchBar.leadingAnchor,
+                constant: VisualMetrics.panelHorizontalInset
+            ),
+            searchField.centerYAnchor.constraint(equalTo: searchBar.centerYAnchor),
+            searchField.trailingAnchor.constraint(
+                lessThanOrEqualTo: searchBar.trailingAnchor,
+                constant: -VisualMetrics.panelHorizontalInset
+            ),
+            searchField.widthAnchor.constraint(greaterThanOrEqualToConstant: 240),
+            preferredSearchWidth,
+            searchSeparator.leadingAnchor.constraint(equalTo: searchBar.leadingAnchor),
+            searchSeparator.trailingAnchor.constraint(equalTo: searchBar.trailingAnchor),
+            searchSeparator.bottomAnchor.constraint(equalTo: searchBar.bottomAnchor),
             fileScroll.leadingAnchor.constraint(equalTo: fileSurface.leadingAnchor),
             fileScroll.trailingAnchor.constraint(equalTo: fileSurface.trailingAnchor),
-            fileScroll.topAnchor.constraint(equalTo: fileSurface.topAnchor),
+            fileScroll.topAnchor.constraint(equalTo: searchBar.bottomAnchor),
             fileScroll.bottomAnchor.constraint(equalTo: fileSurface.bottomAnchor),
             browserStateView.leadingAnchor.constraint(equalTo: fileSurface.leadingAnchor),
             browserStateView.trailingAnchor.constraint(equalTo: fileSurface.trailingAnchor),
-            browserStateView.topAnchor.constraint(equalTo: fileSurface.topAnchor),
+            browserStateView.topAnchor.constraint(equalTo: searchBar.bottomAnchor),
             browserStateView.bottomAnchor.constraint(equalTo: fileSurface.bottomAnchor)
         ])
         splitView.addArrangedSubview(fileSurface)
@@ -169,6 +210,8 @@ extension PanelContentView {
         return [
             "content=\(frameDescription(frame))",
             "pathBar=\(frameDescription(bottomBarView?.frame ?? .zero))",
+            "searchBar=\(frameDescription(searchBarView?.frame ?? .zero))",
+            "searchField=\(frameDescription(searchField.frame))",
             "split=\(frameDescription(splitView?.frame ?? .zero))",
             "sidebarScroll=\(frameDescription(sidebarScrollView?.frame ?? .zero))",
             "fileScroll=\(frameDescription(fileScrollView?.frame ?? .zero))",
@@ -180,16 +223,41 @@ extension PanelContentView {
 
     var isLayoutReady: Bool {
         layoutSubtreeIfNeeded()
-        guard let bottomBarView, let fileScrollView, let splitView else {
+        guard let bottomBarView, let searchBarView, let fileScrollView, let splitView else {
             return false
         }
         return bounds.intersects(bottomBarView.frame)
+            && searchBarView.frame.height >= 24
+            && searchField.frame.width >= 240
             && fileScrollView.frame.width >= 320
             && fileScrollView.frame.height >= 320
             && splitView.frame.height >= 320
             && (fileTable.numberOfRows == 0
                 || fileTable.view(atColumn: 0, row: 0, makeIfNecessary: true) != nil)
     }
+
+    @objc func filterCurrentDirectory(_ sender: NSSearchField) {
+        applyFilterQuery(sender.stringValue)
+    }
+
+    func applyFilterQuery(_ query: String) {
+        searchField.stringValue = query
+        model.setFilterQuery(query)
+        refreshTablesAndThumbnails()
+    }
+
+    func focusSearchField() {
+        window?.makeFirstResponder(searchField)
+    }
+
+    func handleEscape() {
+        guard model.filterQuery.isEmpty == false else {
+            onEscape()
+            return
+        }
+        applyFilterQuery("")
+    }
+
     private func frameDescription(_ frame: CGRect) -> String {
         String(
             format: "%.0f,%.0f,%.0f,%.0f",

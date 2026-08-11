@@ -4,6 +4,7 @@ enum VisualMetrics {
     static let settingsSectionCornerRadius: CGFloat = 10
     static let settingsSectionInset: CGFloat = 16
     static let settingsSectionSpacing: CGFloat = 12
+    static let searchBarHeight: CGFloat = 38
     static let pathBarHeight: CGFloat = 32
     static let panelHorizontalInset: CGFloat = 12
     static let groupSymbolPointSize: CGFloat = 11

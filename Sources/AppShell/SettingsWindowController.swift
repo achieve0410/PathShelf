@@ -155,6 +155,48 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate, NSTo
         return statusLabel.stringValue == message && statusLabel.toolTip == message
     }
 
+    func captureSmokePanes(in directoryURL: URL) -> Bool {
+        guard let window,
+              let contentView = window.contentView,
+              let captureView = contentView.superview else {
+            return false
+        }
+        syncFromSettings(updateStatus: true)
+        let previousIndex = selectedPaneIndex
+        defer {
+            window.toolbar?.selectedItemIdentifier =
+                Self.toolbarDefinitions[previousIndex].identifier
+            showPane(at: previousIndex)
+        }
+
+        for (index, definition) in Self.toolbarDefinitions.enumerated() {
+            window.toolbar?.selectedItemIdentifier = definition.identifier
+            showPane(at: index)
+            captureView.layoutSubtreeIfNeeded()
+            window.displayIfNeeded()
+            guard let representation = captureView.bitmapImageRepForCachingDisplay(
+                in: captureView.bounds
+            ) else {
+                return false
+            }
+            captureView.cacheDisplay(in: captureView.bounds, to: representation)
+            guard let data = representation.representation(using: .png, properties: [:]) else {
+                return false
+            }
+            do {
+                try data.write(
+                    to: directoryURL.appendingPathComponent(
+                        "settings-\(definition.label.lowercased()).png"
+                    ),
+                    options: .atomic
+                )
+            } catch {
+                return false
+            }
+        }
+        return true
+    }
+
     private func makeContentView() -> NSView {
         let root = SemanticSurfaceView(kind: .content)
         placementPopup.identifier = .init("PathShelf.Settings.PanelPlacement")
@@ -176,9 +218,15 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate, NSTo
         accessGuideLabel.textColor = .secondaryLabelColor
         accessGuideLabel.maximumNumberOfLines = 4
 
-        let modifiers = NSStackView(views: [commandCheckbox, controlCheckbox, optionCheckbox, shiftCheckbox])
-        modifiers.orientation = .horizontal
-        modifiers.spacing = 8
+        let modifiers = NSGridView(views: [
+            [commandCheckbox, controlCheckbox],
+            [optionCheckbox, shiftCheckbox]
+        ])
+        modifiers.columnSpacing = 12
+        modifiers.rowSpacing = 6
+        modifiers.column(at: 0).width = 115
+        modifiers.column(at: 1).width = 90
+        modifiers.setContentHuggingPriority(.required, for: .horizontal)
         let detailColumns = NSStackView(
             views: [
                 modifiedColumnCheckbox,
@@ -209,7 +257,7 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate, NSTo
         configurationControls.spacing = 8
 
         let chooseAccessibleFolder = NSButton(
-            title: "Add Folder…",
+            title: "Choose Accessible Folder…",
             target: self,
             action: #selector(chooseAccessibleFolder)
         )
@@ -222,6 +270,9 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate, NSTo
             weight: .medium
         )
         chooseAccessibleFolder.imagePosition = .imageLeading
+        chooseAccessibleFolder.widthAnchor.constraint(
+            greaterThanOrEqualToConstant: 240
+        ).isActive = true
         let openFullDiskAccess = NSButton(
             title: "Open Settings…",
             target: self,
@@ -237,7 +288,7 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate, NSTo
         )
         openFullDiskAccess.imagePosition = .imageLeading
         let revealApp = NSButton(
-            title: "Show in Finder",
+            title: "Show This App in Finder",
             target: self,
             action: #selector(revealCurrentApp)
         )
