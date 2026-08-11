@@ -83,6 +83,8 @@
 - Navigation boundary: a path-component target outside the active navigation root is ignored before URL, history, filter, visible items, or security-scope state changes
 - Disabled: selection-dependent contextual actions are unavailable without a selected row
 - Favorite organization: disclosure controls expand or collapse each group for the current app session; right-click creates, renames, changes the icon of, reorders, or deletes groups; dragging a Favorite onto a group moves it into that group, dragging between Favorites reorders it, and deleting a group returns its contents to Default Group
+- Favorite discovery: keep a native `Add Favorite…` action visible below the Favorites list even when no locations exist; opening it presents the existing folder chooser without adding toolbar clutter
+- Favorite keyboard/accessibility: Return opens the selected Favorite; group disclosure exposes its group name and expanded/collapsed state; Favorite rows expose their display name and access availability to VoiceOver
 - Offline/slow network: local content works normally; provider-backed placeholders and mounted shares remain OS/provider responsibilities
 
 ## Content voice
@@ -97,13 +99,12 @@
 - Design-token constraints: use AppKit semantic colors, fonts, spacing, and controls
 - Performance constraints: no polling, background indexing, or hidden-panel work; sorting and filtering are in-memory over the loaded current directory
 - Compatibility constraints: macOS 15+, arm64, offline-first
-- Test/screenshot expectations: contract tests cover sort behavior, filename filter/clear restoration, directory activation, positive path-component navigation, and rejection outside an active Favorite root; smoke verifies the 1080×580 layout, labeled Favorites area, native search field and no-results state, retained authorized path after a rejected component target, bottom path bar/action, right-aligned result status, absence of panel navigation toolbar controls, native Settings toolbar/access guidance, and resizable panel
+- Test/screenshot expectations: contract tests cover sort behavior, filename filter/clear restoration, directory activation, positive path-component navigation, and rejection outside an active Favorite root; smoke verifies the 1080×580 layout, labeled Favorites area, visible add action, Return activation, VoiceOver Favorite semantics, native search field and no-results state, retained authorized path after a rejected component target, bottom path bar/action, right-aligned result status, absence of panel navigation toolbar controls, native Settings toolbar/access guidance, and resizable panel
 
 ## Accepted design debt
 
 - The first filter increment matches filenames only; content, tag, fuzzy, and full-disk search remain intentionally out of scope.
-- Favorites has no visible empty-state add button yet; blank-area context actions remain the current first-use path.
-- Sidebar Return activation, explicit disclosure expanded/collapsed semantics, unified native close teardown, and Settings dirty/discard state are prioritized follow-up accessibility/usability work documented in `docs/PRODUCT_AUDIT_AND_IMPROVEMENT_PLAN.md`.
+- Unified native close teardown and Settings dirty/discard state remain prioritized follow-up accessibility/usability work documented in `docs/PRODUCT_AUDIT_AND_IMPROVEMENT_PLAN.md`.
 - External WindowServer screenshots are unavailable in the current QA session; fresh evidence is captured from the same running AppKit views through the smoke-only native capture hook.
 
 ## Open questions

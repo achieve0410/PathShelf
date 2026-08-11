@@ -73,7 +73,8 @@ extension PanelContentView {
         guard let id = favoriteIDForAction(sender) else {
             return
         }
-        Task { [weak self] in
+        favoriteActivationTask?.cancel()
+        favoriteActivationTask = Task { [weak self] in
             do {
                 try await self?.model.navigateToSavedLocation(id: id)
             } catch {

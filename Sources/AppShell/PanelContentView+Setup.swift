@@ -6,6 +6,7 @@ extension PanelContentView {
     func setup() {
         sidebarTable.onEscape = { [weak self] in self?.handleEscape() }
         sidebarTable.onFind = { [weak self] in self?.focusSearchField() }
+        sidebarTable.onReturn = { [weak self] in self?.openSavedLocation(nil) }
         fileTable.onEscape = { [weak self] in self?.handleEscape() }
         fileTable.onFind = { [weak self] in self?.focusSearchField() }
         fileTable.onReturn = { [weak self] in self?.openSelection() }
@@ -54,9 +55,23 @@ extension PanelContentView {
         sidebarTitleLabel.font = .systemFont(ofSize: 12, weight: .semibold)
         sidebarTitleLabel.textColor = .secondaryLabelColor
         sidebarTitleLabel.translatesAutoresizingMaskIntoConstraints = false
+        addFavoriteButton.title = "Add Favorite…"
+        addFavoriteButton.image = NSImage(
+            systemSymbolName: "plus",
+            accessibilityDescription: nil
+        )
+        addFavoriteButton.imagePosition = .imageLeading
+        addFavoriteButton.bezelStyle = .rounded
+        addFavoriteButton.controlSize = .small
+        addFavoriteButton.target = self
+        addFavoriteButton.action = #selector(addSavedLocation(_:))
+        addFavoriteButton.setAccessibilityIdentifier("pathshelf.favorite.add")
+        addFavoriteButton.setAccessibilityLabel("Add Favorite")
+        addFavoriteButton.translatesAutoresizingMaskIntoConstraints = false
         sidebarScroll.translatesAutoresizingMaskIntoConstraints = false
         sidebarSurface.addSubview(sidebarTitleLabel)
         sidebarSurface.addSubview(sidebarScroll)
+        sidebarSurface.addSubview(addFavoriteButton)
         NSLayoutConstraint.activate([
             sidebarTitleLabel.leadingAnchor.constraint(equalTo: sidebarSurface.leadingAnchor, constant: 12),
             sidebarTitleLabel.trailingAnchor.constraint(
@@ -67,7 +82,20 @@ extension PanelContentView {
             sidebarScroll.leadingAnchor.constraint(equalTo: sidebarSurface.leadingAnchor),
             sidebarScroll.trailingAnchor.constraint(equalTo: sidebarSurface.trailingAnchor),
             sidebarScroll.topAnchor.constraint(equalTo: sidebarTitleLabel.bottomAnchor, constant: 6),
-            sidebarScroll.bottomAnchor.constraint(equalTo: sidebarSurface.bottomAnchor)
+            sidebarScroll.bottomAnchor.constraint(equalTo: addFavoriteButton.topAnchor, constant: -6),
+            addFavoriteButton.leadingAnchor.constraint(
+                equalTo: sidebarSurface.leadingAnchor,
+                constant: 12
+            ),
+            addFavoriteButton.trailingAnchor.constraint(
+                equalTo: sidebarSurface.trailingAnchor,
+                constant: -12
+            ),
+            addFavoriteButton.bottomAnchor.constraint(
+                equalTo: sidebarSurface.bottomAnchor,
+                constant: -8
+            ),
+            addFavoriteButton.heightAnchor.constraint(equalToConstant: 24)
         ])
 
         splitView.addArrangedSubview(sidebarSurface)

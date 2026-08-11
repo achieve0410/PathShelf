@@ -350,6 +350,9 @@ final class PathShelfApp: NSObject, NSApplicationDelegate, NSMenuItemValidation 
         let coldStart = DispatchTime.now()
         _ = await panelController?.runColdInteractiveProbe()
         let coldLatencyMs = Double(DispatchTime.now().uptimeNanoseconds - coldStart.uptimeNanoseconds) / 1_000_000.0
+        let favoriteUsabilityProbe = await panelController?.runFavoriteUsabilityProbe(
+            fixtureURL: fixtureURL
+        ) ?? .unavailable
         let filterCaptureDirectoryURL = ProcessInfo.processInfo.environment[
             "PATHSHELF_SMOKE_CAPTURE_DIRECTORY"
         ].map { URL(fileURLWithPath: $0, isDirectory: true) }
@@ -415,6 +418,13 @@ final class PathShelfApp: NSObject, NSApplicationDelegate, NSMenuItemValidation 
         smokePrint("SMOKE searchAccessibilityReady=\(filterProbe.accessibilityReady)")
         smokePrint("SMOKE searchKeyboardFocusReady=\(filterProbe.keyboardFocusReady)")
         smokePrint("SMOKE searchEscapeClearReady=\(filterProbe.escapeClearReady)")
+        smokePrint("SMOKE favoriteAddControlReady=\(favoriteUsabilityProbe.addControlReady)")
+        smokePrint(
+            "SMOKE favoriteReturnActivationReady=\(favoriteUsabilityProbe.returnActivationReady)"
+        )
+        smokePrint(
+            "SMOKE favoriteAccessibilityReady=\(favoriteUsabilityProbe.accessibilityReady)"
+        )
         smokePrint("SMOKE loadingStateReady=\(filterProbe.loadingStateReady)")
         smokePrint("SMOKE filterNarrowsItems=\(filterProbe.narrowsItems)")
         smokePrint("SMOKE filterNoResultsReady=\(filterProbe.showsNoResults)")
@@ -786,6 +796,13 @@ final class FloatingPanelController {
             preserved: preserved,
             captureReady: captureReady
         )
+    }
+
+    func runFavoriteUsabilityProbe(
+        fixtureURL: URL
+    ) async -> FavoriteUsabilityProbeResult {
+        await contentView?.runFavoriteUsabilityProbe(fixtureURL: fixtureURL)
+            ?? .unavailable
     }
 
     func runFilterProbe(

@@ -91,6 +91,8 @@ final class SavedLocationTableDataSource: NSObject, NSTableViewDataSource, NSTab
         disclosure.state = isExpanded ? .on : .off
         disclosure.tag = row
         disclosure.toolTip = isExpanded ? "Collapse \(title)" : "Expand \(title)"
+        disclosure.setAccessibilityLabel(title)
+        disclosure.setAccessibilityValue(isExpanded ? "expanded" : "collapsed")
         let icon = NSImageView()
         icon.image = NSImage(systemSymbolName: iconName, accessibilityDescription: title)
         icon.contentTintColor = .secondaryLabelColor
@@ -169,6 +171,7 @@ final class SavedLocationTableDataSource: NSObject, NSTableViewDataSource, NSTab
         if showsWarning == false {
             label.trailingAnchor.constraint(equalTo: cell.trailingAnchor, constant: -8).isActive = true
             cell.toolTip = location.bookmark.originalPath
+            cell.setAccessibilityLabel("Favorite \(location.displayName), available")
         } else {
             let accessibilityDescription = location.availability.accessibilityDescription
             let badge = NSImageView()
@@ -191,7 +194,9 @@ final class SavedLocationTableDataSource: NSObject, NSTableViewDataSource, NSTab
                 badge.heightAnchor.constraint(equalToConstant: 13)
             ])
             cell.toolTip = "\(location.bookmark.originalPath)\n\(accessibilityDescription)"
-            cell.setAccessibilityLabel("\(location.displayName), \(accessibilityDescription)")
+            cell.setAccessibilityLabel(
+                "Favorite \(location.displayName), \(accessibilityDescription)"
+            )
         }
         return cell
     }
