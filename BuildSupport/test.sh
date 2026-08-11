@@ -9,6 +9,8 @@ if ! command -v rg >/dev/null 2>&1; then
   exit 127
 fi
 
+bash BuildSupport/beta-feedback-audit.sh
+
 swift run ContractTests
 swift run ServiceContractTests
 swift run PanelContractTests
