@@ -16,6 +16,7 @@ struct PanelContractTests {
             ("activating a selected directory enters that directory", testDirectoryActivation),
             ("browser can start at a configured default location while Home remains stable", testConfiguredInitialLocation),
             ("path bar navigation opens the selected directory component", testPathBarNavigation),
+            ("path bar navigation preserves the authorized saved-location root", testPathBarNavigationPreservesSavedLocationBoundary),
             ("saved locations persist rename reorder and remove", testSavedLocationManagement),
             ("favorite groups persist grouping and drag-style reordering", testFavoriteGroupManagement),
             ("saved location writes are atomic on persistence failure", testSavedLocationAtomicityOnPersistenceFailure),
@@ -502,6 +503,47 @@ struct PanelContractTests {
         await model.navigateToPathBarLocation(parent)
         try expect(model.currentDirectoryURL == parent.standardizedFileURL)
         try expect(model.items.map(\.name) == ["Child"])
+    }
+
+    @MainActor
+    private static func testPathBarNavigationPreservesSavedLocationBoundary() async throws {
+        let home = try TemporaryDirectory()
+        let authorized = home.url.appendingPathComponent("Authorized", isDirectory: true)
+        let child = authorized.appendingPathComponent("Child", isDirectory: true)
+        let outside = home.url.appendingPathComponent("Outside", isDirectory: true)
+        try FileManager.default.createDirectory(at: child, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: outside, withIntermediateDirectories: true)
+        try Data("inside".utf8).write(to: child.appendingPathComponent("inside.txt"))
+        try Data("outside".utf8).write(to: outside.appendingPathComponent("outside.txt"))
+
+        let closeCount = LockedBox(0)
+        let stored = LockedBox<[SavedLocation]>([])
+        let model = makeModel(
+            home: home.url,
+            savedLocations: stored,
+            bookmarkService: scopedBookmarkService(closeCount: closeCount),
+            closeSecurityScopedURL: { _ in closeCount.withValue { $0 += 1 } }
+        )
+
+        await model.loadInitialState()
+        try model.addSavedLocation(url: authorized, displayName: "Authorized")
+        let id = try unwrap(model.savedLocations.first?.id)
+        try await model.navigateToSavedLocation(id: id)
+        await model.navigateToPathBarLocation(child)
+        model.setFilterQuery("inside")
+
+        await model.navigateToPathBarLocation(outside)
+
+        try expect(
+            model.currentDirectoryURL == child.standardizedFileURL,
+            "path bar escaped authorized root: \(model.currentDirectoryURL.path)"
+        )
+        try expect(model.items.map(\.name) == ["inside.txt"])
+        try expect(model.filterQuery == "inside")
+        try expect(closeCount.withValue { $0 } == 0)
+
+        await model.navigateBack()
+        try expect(model.currentDirectoryURL == authorized.standardizedFileURL)
     }
 
     @MainActor

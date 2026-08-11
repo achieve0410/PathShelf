@@ -277,6 +277,12 @@ public final class FileBrowserModel {
     }
 
     public func navigateToPathBarLocation(_ directoryURL: URL) async {
+        guard accessPolicy.isInsideScopedRoot(
+            directoryURL,
+            scopedRoot: currentNavigationRoot
+        ) else {
+            return
+        }
         guard openSecurityScopeForSavedLocationIfNeeded(containing: directoryURL) else {
             lastErrorMessage = "Access is unavailable for \(directoryURL.path)"
             return
@@ -295,13 +301,9 @@ public final class FileBrowserModel {
     }
 
     public func navigateUp() async {
-        let navigationRoot = activeScopedURL?.url
-            ?? configuredInitialRoot.flatMap { root in
-                accessPolicy.isInsideScopedRoot(currentDirectoryURL, scopedRoot: root) ? root : nil
-            }
         guard let parent = accessPolicy.parentForUpNavigation(
             from: currentDirectoryURL,
-            scopedRoot: navigationRoot
+            scopedRoot: currentNavigationRoot
         ) else {
             return
         }
@@ -796,6 +798,17 @@ public final class FileBrowserModel {
         selectedIndex = selectedURL.flatMap { selectedURL in
             items.firstIndex { $0.url == selectedURL }
         }
+    }
+
+    private var currentNavigationRoot: URL {
+        activeScopedURL?.url
+            ?? configuredInitialRoot.flatMap { root in
+                accessPolicy.isInsideScopedRoot(
+                    currentDirectoryURL,
+                    scopedRoot: root
+                ) ? root : nil
+            }
+            ?? accessPolicy.homeRoot
     }
 
     private func setLoading(_ loading: Bool) {
