@@ -8,6 +8,9 @@ import PreviewFeature
 import SettingsFeature
 
 private let appProcessProbeStart = Date()
+private let betaFeedbackIssueFormURL = URL(
+    string: "https://github.com/achieve0410/PathShelf/issues/new?template=beta_feedback.yml"
+)
 
 @main
 @MainActor
@@ -20,6 +23,7 @@ final class PathShelfApp: NSObject, NSApplicationDelegate, NSMenuItemValidation 
     private var panelController: FloatingPanelController?
     private var statusItemController: StatusItemController?
     private var settingsWindowController: SettingsWindowController?
+    private var smokeBetaFeedbackURL: URL?
 
     override init() {
         self.settingsStore = SettingsStore(
@@ -53,6 +57,8 @@ final class PathShelfApp: NSObject, NSApplicationDelegate, NSMenuItemValidation 
             self?.togglePanelFromFallback()
         }, openSettings: { [weak self] in
             self?.openSettings()
+        }, sendBetaFeedback: { [weak self] in
+            self?.sendBetaFeedbackFromMenu(nil)
         })
         NSApp.setActivationPolicy(.accessory)
         NSApp.mainMenu = MainMenuFactory.makeMainMenu(commandTarget: self)
@@ -102,6 +108,17 @@ final class PathShelfApp: NSObject, NSApplicationDelegate, NSMenuItemValidation 
 
     @objc func openSettingsFromMenu(_ sender: Any?) {
         openSettings()
+    }
+
+    @objc func sendBetaFeedbackFromMenu(_ sender: Any?) {
+        guard let url = betaFeedbackIssueFormURL else {
+            return
+        }
+        if ProcessInfo.processInfo.environment["PATHSHELF_SMOKE"] == "1" {
+            smokeBetaFeedbackURL = url
+            return
+        }
+        NSWorkspace.shared.open(url)
     }
 
     @objc func reauthorizeSelectedFavoriteFromMenu(_ sender: Any?) {
@@ -270,6 +287,7 @@ final class PathShelfApp: NSObject, NSApplicationDelegate, NSMenuItemValidation 
         let hotKeyRegistered = invocationController?.activeShortcut != nil
         let fallbackReady = NSApp.mainMenu != nil && statusItemController?.isReady == true
         let statusIconReady = statusItemController?.hasVisibleIcon == true
+        let betaFeedbackEntryReady = runBetaFeedbackEntryProbe()
         let welcomeVisible = settingsWindowController?.window?.isVisible == true
         let browserPreferencesReady = settingsWindowController?.browserPreferencesReady == true
         let configurationTransferReady = settingsWindowController?.configurationTransferReady == true
@@ -301,6 +319,7 @@ final class PathShelfApp: NSObject, NSApplicationDelegate, NSMenuItemValidation 
         smokePrint("SMOKE hotkeyError=\(invocationController?.lastError?.description ?? "none")")
         smokePrint("SMOKE fallbackReady=\(fallbackReady)")
         smokePrint("SMOKE statusIconReady=\(statusIconReady)")
+        smokePrint("SMOKE betaFeedbackEntryReady=\(betaFeedbackEntryReady)")
         smokePrint("SMOKE welcomeVisible=\(welcomeVisible)")
         smokePrint("SMOKE browserPreferencesReady=\(browserPreferencesReady)")
         smokePrint("SMOKE configurationTransferReady=\(configurationTransferReady)")
@@ -555,6 +574,39 @@ final class PathShelfApp: NSObject, NSApplicationDelegate, NSMenuItemValidation 
         print(message)
         fflush(stdout)
     }
+
+    private func runBetaFeedbackEntryProbe() -> Bool {
+        guard let expectedURL = betaFeedbackIssueFormURL,
+              let appMenu = NSApp.mainMenu?.items
+                .first(where: { $0.title == "PathShelf" })?
+                .submenu,
+              let appItemIndex = appMenu.items.firstIndex(where: {
+                  $0.action == #selector(sendBetaFeedbackFromMenu(_:))
+              }) else {
+            return false
+        }
+
+        smokeBetaFeedbackURL = nil
+        appMenu.performActionForItem(at: appItemIndex)
+        let appMenuReady = smokeBetaFeedbackURL == expectedURL
+
+        smokeBetaFeedbackURL = nil
+        let statusMenuReady =
+            statusItemController?.performBetaFeedbackActionForProbe() == true
+            && smokeBetaFeedbackURL == expectedURL
+
+        let components = URLComponents(
+            url: expectedURL,
+            resolvingAgainstBaseURL: false
+        )
+        let destinationReady = components?.scheme == "https"
+            && components?.host == "github.com"
+            && components?.path == "/achieve0410/PathShelf/issues/new"
+            && components?.queryItems?.contains {
+                $0.name == "template" && $0.value == "beta_feedback.yml"
+            } == true
+        return appMenuReady && statusMenuReady && destinationReady
+    }
 }
 
 final class TerminationSignalHandler {
@@ -652,6 +704,11 @@ enum MainMenuFactory {
             withTitle: "Settings...",
             action: #selector(PathShelfApp.openSettingsFromMenu(_:)),
             keyEquivalent: ","
+        ).target = commandTarget
+        appMenu.addItem(
+            withTitle: "Send Beta Feedback…",
+            action: #selector(PathShelfApp.sendBetaFeedbackFromMenu(_:)),
+            keyEquivalent: ""
         ).target = commandTarget
         appMenu.addItem(NSMenuItem.separator())
         appMenu.addItem(
@@ -1118,7 +1175,11 @@ final class StatusItemController {
         return button.image != nil || button.title.isEmpty == false
     }
 
-    init(togglePanel: @escaping () -> Void, openSettings: @escaping () -> Void) {
+    init(
+        togglePanel: @escaping () -> Void,
+        openSettings: @escaping () -> Void,
+        sendBetaFeedback: @escaping () -> Void
+    ) {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         if let image = NSImage(systemSymbolName: "folder.fill", accessibilityDescription: "PathShelf") {
             image.isTemplate = true
@@ -1131,6 +1192,12 @@ final class StatusItemController {
         let menu = NSMenu()
         menu.addItem(StatusItemAction(title: "Toggle Panel", actionHandler: togglePanel))
         menu.addItem(StatusItemAction(title: "Settings...", actionHandler: openSettings))
+        menu.addItem(
+            StatusItemAction(
+                title: "Send Beta Feedback…",
+                actionHandler: sendBetaFeedback
+            )
+        )
         menu.addItem(NSMenuItem.separator())
         menu.addItem(
             withTitle: "Quit PathShelf",
@@ -1138,6 +1205,17 @@ final class StatusItemController {
             keyEquivalent: "q"
         )
         statusItem.menu = menu
+    }
+
+    func performBetaFeedbackActionForProbe() -> Bool {
+        guard let menu = statusItem.menu,
+              let index = menu.items.firstIndex(where: {
+                  $0.title == "Send Beta Feedback…"
+              }) else {
+            return false
+        }
+        menu.performActionForItem(at: index)
+        return true
     }
 }
 

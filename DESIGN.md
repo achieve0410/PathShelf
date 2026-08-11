@@ -17,7 +17,7 @@
 
 - Goals: make frequent folders and local files reachable in one shortcut; let users narrow the current folder without disk indexing; make navigation and file actions self-explanatory; remain idle when hidden
 - Non-goals: replace Finder, index the disk, permanently delete files, add online accounts
-- Success signals: a first-time user can identify the current location, add a favorite, enter a folder, filter it by filename, clear the filter, sort items, resize the panel, and discover file actions without documentation
+- Success signals: a first-time user can identify the current location, add a favorite, enter a folder, filter it by filename, clear the filter, sort items, resize the panel, discover file actions, and intentionally reach the public beta feedback form without documentation
 
 ## Personas and jobs
 
@@ -28,7 +28,7 @@
 ## Information architecture
 
 - Primary navigation: grouped and collapsible Favorites, direct folder activation, and clickable bottom path components for ancestor navigation
-- Core routes/screens: floating file browser; native toolbar-based Settings
+- Core routes/screens: floating file browser; native toolbar-based Settings; app and status menus with one user-initiated beta feedback command
 - Content hierarchy: labeled source-list Favorites sidebar with an always-present Default Group section and user-created groups; a compact native search row immediately above the sortable file list; centered loading/empty/no-results/error states; bottom Finder-style path bar with result/item count or error status; Settings divided into General, Shortcut, Browser, and Access toolbar panes
 
 ## Design principles
@@ -38,6 +38,7 @@
 - Open the panel in front when explicitly invoked, then keep it at the normal macOS window level so other application windows can naturally cover it.
 - Keep persistent chrome concise: the search row occupies one native control height, Favorites shows names without healthy-state labels or instructional copy, and Settings owns file-access guidance.
 - Keep safe defaults: destructive actions require confirmation and replacement is never implicit.
+- Keep validation consent-based: `Send Beta Feedback…` opens the public GitHub issue form only after a direct menu action; PathShelf records and uploads no usage, paths, filenames, credentials, or personal data.
 - Tradeoffs: prefer native AppKit controls over custom visual styling; omit redundant Back/Up/Home controls because direct folder activation and Favorites cover the primary workflow.
 
 ## Visual language
@@ -85,21 +86,22 @@
 - Favorite organization: disclosure controls expand or collapse each group for the current app session; right-click creates, renames, changes the icon of, reorders, or deletes groups; dragging a Favorite onto a group moves it into that group, dragging between Favorites reorders it, and deleting a group returns its contents to Default Group
 - Favorite discovery: keep a native `Add Favorite…` action visible below the Favorites list even when no locations exist; opening it presents the existing folder chooser without adding toolbar clutter
 - Favorite keyboard/accessibility: Return opens the selected Favorite; group disclosure exposes its group name and expanded/collapsed state; Favorite rows expose their display name and access availability to VoiceOver
+- Beta feedback: place one native `Send Beta Feedback…` item next to Settings in both the app and status menus; dispatch the exact public HTTPS issue-form URL to the default browser after activation and add no primary-panel chrome
 - Offline/slow network: local content works normally; provider-backed placeholders and mounted shares remain OS/provider responsibilities
 
 ## Content voice
 
 - Tone: concise, literal, neutral
-- Terminology: `Favorites`, `Add to Favorites`, `New Folder…`, `Open With…`, `Choose Accessible Folder…`, `Show This App in Finder`, `Full Disk Access`
+- Terminology: `Favorites`, `Add to Favorites`, `New Folder…`, `Open With…`, `Choose Accessible Folder…`, `Send Beta Feedback…`, `Show This App in Finder`, `Full Disk Access`
 - Microcopy rules: name the object and result; use ellipses when an action opens another choice or confirmation surface
 
 ## Implementation constraints
 
 - Framework/styling system: AppKit-first, no third-party dependencies
 - Design-token constraints: use AppKit semantic colors, fonts, spacing, and controls
-- Performance constraints: no polling, background indexing, or hidden-panel work; sorting and filtering are in-memory over the loaded current directory
+- Performance constraints: no polling, background indexing, hidden-panel work, telemetry, accounts, automatic feedback upload, or app-owned network service; sorting and filtering are in-memory over the loaded current directory
 - Compatibility constraints: macOS 15+, arm64, offline-first
-- Test/screenshot expectations: contract tests cover sort behavior, filename filter/clear restoration, directory activation, positive path-component navigation, and rejection outside an active Favorite root; smoke verifies the 1080×580 layout, labeled Favorites area, visible add action, Return activation, VoiceOver Favorite semantics, native search field and no-results state, retained authorized path after a rejected component target, bottom path bar/action, right-aligned result status, absence of panel navigation toolbar controls, native Settings toolbar/access guidance, and resizable panel
+- Test/screenshot expectations: contract tests cover sort behavior, filename filter/clear restoration, directory activation, positive path-component navigation, and rejection outside an active Favorite root; beta audit parses the machine-consumed feedback schema; smoke invokes the production beta-feedback `NSMenu` action at an intercepted browser-adapter boundary and verifies its HTTPS host/path/template while retaining all existing 1080×580 panel, Favorite, search, path-boundary, Settings, and resize checks
 
 ## Accepted design debt
 

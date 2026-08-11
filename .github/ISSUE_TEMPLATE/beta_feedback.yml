@@ -1,0 +1,65 @@
+name: Beta feedback
+description: Share two-week PathShelf usage and one-time purchase intent
+title: "[Beta Feedback] "
+labels:
+  - enhancement
+body:
+  - type: dropdown
+    id: workflow_frequency
+    attributes:
+      label: Folder-switching frequency
+      description: How often does your normal work require switching among a small set of folders?
+      options:
+        - More than once each workday
+        - Once each workday
+        - A few times each week
+        - Less than weekly
+    validations:
+      required: true
+  - type: dropdown
+    id: setup_completed
+    attributes:
+      label: Favorite setup
+      description: Were you able to add and open a Favorite?
+      options:
+        - Yes, without help
+        - Yes, with help
+        - "No"
+    validations:
+      required: true
+  - type: dropdown
+    id: week_two_use
+    attributes:
+      label: Week-two use
+      description: During the second week, on how many days did you use PathShelf?
+      options:
+        - 0 days
+        - 1 day
+        - 2-3 days
+        - 4-5 days
+        - 6-7 days
+    validations:
+      required: true
+  - type: dropdown
+    id: one_time_price_intent
+    attributes:
+      label: One-time purchase intent
+      description: Which statement best matches your intent for a one-time PathShelf license?
+      options:
+        - Would buy at US$20
+        - Would buy below US$20
+        - Need more use before deciding
+        - Would not buy
+    validations:
+      required: true
+  - type: checkboxes
+    id: privacy_consent
+    attributes:
+      label: Public and privacy-safe submission
+      options:
+        - label: I understand that this GitHub issue will be public.
+          required: true
+        - label: I included no paths, filenames, credentials, personal data, or other sensitive information.
+          required: true
+    validations:
+      required: true
