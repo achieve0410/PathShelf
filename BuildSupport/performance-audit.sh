@@ -14,6 +14,12 @@ SETTINGS_FILE="$PERF_ROOT/settings.json"
 BOOKMARKS_FILE="$PERF_ROOT/bookmarks.json"
 OUTPUT_FILE="$ROOT_DIR/.build/performance-audit-output.txt"
 
+cleanup_performance_audit() {
+  rm -rf "$PERF_ROOT"
+  pathshelf_release_audit_lock
+}
+trap cleanup_performance_audit EXIT
+
 PATHSHELF_PERF_LINKER_PREFLIGHT=1 "$APP_EXECUTABLE"
 
 mkdir -p "$VISIBLE_DIR"

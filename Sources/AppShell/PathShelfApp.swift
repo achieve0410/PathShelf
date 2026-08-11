@@ -444,6 +444,12 @@ final class PathShelfApp: NSObject, NSApplicationDelegate, NSMenuItemValidation 
 
         for _ in 0..<20 {
             panelController?.hide()
+            await withCheckedContinuation {
+                (continuation: CheckedContinuation<Void, Never>) in
+                DispatchQueue.main.async {
+                    continuation.resume()
+                }
+            }
             let start = DispatchTime.now()
             _ = await panelController?.showAndWaitForInteractiveProbe(
                 mode: loadedPlacement,
