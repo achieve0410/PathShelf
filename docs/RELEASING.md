@@ -63,6 +63,16 @@ shared-mapping costs remain visible separately.
 is suitable for local testing, not a claim of Developer ID signing or
 notarization.
 
+To exercise archive creation locally without creating a distributable binary:
+
+```sh
+PATHSHELF_ALLOW_ADHOC_QA=1 bash BuildSupport/package-release.sh
+bash BuildSupport/release-package-audit.sh
+```
+
+The package metadata is `distribution=local-qa-only`. Do not upload that
+archive or present it as a release.
+
 Before distributing a binary:
 
 1. Sign the bundle with an approved Developer ID Application identity.
@@ -72,6 +82,15 @@ Before distributing a binary:
 4. Archive the app and generate a SHA-256 checksum.
 
 Never publish an ad-hoc artifact as though it were notarized.
+
+Authorized maintainers can run the manual `Binary Release Candidate` workflow
+after configuring the repository's Developer ID certificate and App Store
+Connect notarization secrets. The workflow fails before building if any secret
+is absent or the selected ref is not `main`, uses hardened-runtime Developer ID
+signing, waits for notarization, staples and assesses the app, and uploads only
+the notarized zip, checksum, and package metadata as a workflow artifact. An
+always-run step removes imported signing and notarization files. The workflow
+does not create a tag or GitHub Release.
 
 ## Source-only publication
 

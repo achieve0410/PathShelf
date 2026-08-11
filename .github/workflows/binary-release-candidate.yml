@@ -1,0 +1,96 @@
+name: Binary Release Candidate
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: binary-release-candidate-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  notarized-arm64:
+    runs-on: macos-15
+    timeout-minutes: 45
+    steps:
+      - name: Check out source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - name: Require protected main
+        run: test "$GITHUB_REF" = "refs/heads/main"
+      - name: Require release credentials
+        env:
+          APPLE_CERTIFICATE_P12_BASE64: ${{ secrets.APPLE_CERTIFICATE_P12_BASE64 }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_DEVELOPER_IDENTITY: ${{ secrets.APPLE_DEVELOPER_IDENTITY }}
+          APPLE_NOTARY_KEY_P8: ${{ secrets.APPLE_NOTARY_KEY_P8 }}
+          APPLE_NOTARY_KEY_ID: ${{ secrets.APPLE_NOTARY_KEY_ID }}
+          APPLE_NOTARY_ISSUER_ID: ${{ secrets.APPLE_NOTARY_ISSUER_ID }}
+        run: |
+          test -n "$APPLE_CERTIFICATE_P12_BASE64"
+          test -n "$APPLE_CERTIFICATE_PASSWORD"
+          test -n "$APPLE_DEVELOPER_IDENTITY"
+          test -n "$APPLE_NOTARY_KEY_P8"
+          test -n "$APPLE_NOTARY_KEY_ID"
+          test -n "$APPLE_NOTARY_ISSUER_ID"
+      - name: Import Developer ID certificate
+        env:
+          APPLE_CERTIFICATE_P12_BASE64: ${{ secrets.APPLE_CERTIFICATE_P12_BASE64 }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+        run: |
+          CERTIFICATE_PATH="$RUNNER_TEMP/pathshelf-certificate.p12"
+          KEYCHAIN_PATH="$RUNNER_TEMP/pathshelf-signing.keychain-db"
+          printf '%s' "$APPLE_CERTIFICATE_P12_BASE64" | /usr/bin/base64 -D >"$CERTIFICATE_PATH"
+          security create-keychain -p "$RUNNER_TEMP" "$KEYCHAIN_PATH"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
+          security unlock-keychain -p "$RUNNER_TEMP" "$KEYCHAIN_PATH"
+          security import "$CERTIFICATE_PATH" -P "$APPLE_CERTIFICATE_PASSWORD" -A -t cert -f pkcs12 -k "$KEYCHAIN_PATH"
+          security list-keychain -d user -s "$KEYCHAIN_PATH"
+          security set-key-partition-list -S apple-tool:,apple: -s -k "$RUNNER_TEMP" "$KEYCHAIN_PATH"
+      - name: Build Developer ID app
+        env:
+          PATHSHELF_SIGNING_IDENTITY: ${{ secrets.APPLE_DEVELOPER_IDENTITY }}
+        run: CONFIGURATION=release bash BuildSupport/build-app.sh
+      - name: Notarize and staple app
+        env:
+          APPLE_NOTARY_KEY_P8: ${{ secrets.APPLE_NOTARY_KEY_P8 }}
+          APPLE_NOTARY_KEY_ID: ${{ secrets.APPLE_NOTARY_KEY_ID }}
+          APPLE_NOTARY_ISSUER_ID: ${{ secrets.APPLE_NOTARY_ISSUER_ID }}
+        run: |
+          KEY_PATH="$RUNNER_TEMP/AuthKey_${APPLE_NOTARY_KEY_ID}.p8"
+          NOTARY_ZIP="$RUNNER_TEMP/PathShelf-notary.zip"
+          printf '%s' "$APPLE_NOTARY_KEY_P8" >"$KEY_PATH"
+          ditto -c -k --sequesterRsrc --keepParent .build/PathShelf.app "$NOTARY_ZIP"
+          xcrun notarytool submit "$NOTARY_ZIP" \
+            --key "$KEY_PATH" \
+            --key-id "$APPLE_NOTARY_KEY_ID" \
+            --issuer "$APPLE_NOTARY_ISSUER_ID" \
+            --wait
+          xcrun stapler staple .build/PathShelf.app
+      - name: Package verified artifact
+        env:
+          PATHSHELF_SIGNING_IDENTITY: ${{ secrets.APPLE_DEVELOPER_IDENTITY }}
+          PATHSHELF_PACKAGE_EXISTING_APP: "1"
+        run: bash BuildSupport/package-release.sh
+      - name: Upload notarized candidate
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: PathShelf-macos-arm64-notarized
+          path: |
+            .build/release/PathShelf-macos-arm64.zip
+            .build/release/PathShelf-macos-arm64.zip.sha256
+            .build/release/PACKAGE-METADATA.txt
+          if-no-files-found: error
+      - name: Remove signing material
+        if: ${{ always() }}
+        env:
+          APPLE_NOTARY_KEY_ID: ${{ secrets.APPLE_NOTARY_KEY_ID }}
+        run: |
+          security delete-keychain "$RUNNER_TEMP/pathshelf-signing.keychain-db" 2>/dev/null || true
+          rm -f \
+            "$RUNNER_TEMP/pathshelf-certificate.p12" \
+            "$RUNNER_TEMP/AuthKey_${APPLE_NOTARY_KEY_ID}.p8" \
+            "$RUNNER_TEMP/PathShelf-notary.zip"
