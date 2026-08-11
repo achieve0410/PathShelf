@@ -289,6 +289,13 @@ final class PathShelfApp: NSObject, NSApplicationDelegate, NSMenuItemValidation 
             } == true
         let loadedPlacement = invocationController?.settings.panelPlacement.mode ?? .cursorAdjacent
         let loadedShortcut = invocationController?.settings.shortcut ?? .default
+        let settingsCaptureReady = ProcessInfo.processInfo.environment[
+            "PATHSHELF_SMOKE_CAPTURE_DIRECTORY"
+        ].map {
+            settingsWindowController?.captureSmokePanes(
+                in: URL(fileURLWithPath: $0, isDirectory: true)
+            ) == true
+        } ?? true
 
         smokePrint("SMOKE hotkeyRegistered=\(hotKeyRegistered)")
         smokePrint("SMOKE hotkeyError=\(invocationController?.lastError?.description ?? "none")")
@@ -306,6 +313,7 @@ final class PathShelfApp: NSObject, NSApplicationDelegate, NSMenuItemValidation 
         smokePrint("SMOKE keyboardReauthorizationReady=\(keyboardReauthorizationReady)")
         smokePrint("SMOKE loadedPlacement=\(loadedPlacement.rawValue)")
         smokePrint("SMOKE loadedShortcutValid=\(loadedShortcut.isValidForGlobalRegistration)")
+        smokePrint("SMOKE settingsCaptureReady=\(settingsCaptureReady)")
         settingsWindowController?.close()
         _ = applicationShouldHandleReopen(NSApp, hasVisibleWindows: false)
         let reopenPanelVisible = panelController?.isPanelVisible == true
@@ -342,6 +350,13 @@ final class PathShelfApp: NSObject, NSApplicationDelegate, NSMenuItemValidation 
         let coldStart = DispatchTime.now()
         _ = await panelController?.runColdInteractiveProbe()
         let coldLatencyMs = Double(DispatchTime.now().uptimeNanoseconds - coldStart.uptimeNanoseconds) / 1_000_000.0
+        let filterCaptureDirectoryURL = ProcessInfo.processInfo.environment[
+            "PATHSHELF_SMOKE_CAPTURE_DIRECTORY"
+        ].map { URL(fileURLWithPath: $0, isDirectory: true) }
+        let filterProbe = await panelController?.runFilterProbe(
+            fixtureURL: fixtureURL,
+            captureDirectoryURL: filterCaptureDirectoryURL
+        ) ?? .unavailable
         let browserSnapshot = await panelController?.runSmokeBrowserProbe(fixtureURL: fixtureURL) ?? BrowserSnapshot(
             currentDirectoryURL: URL(fileURLWithPath: "/"),
             itemNames: [],
@@ -354,6 +369,17 @@ final class PathShelfApp: NSObject, NSApplicationDelegate, NSMenuItemValidation 
             generation: 0,
             teardownCount: 0
         )
+        if let capturePath = ProcessInfo.processInfo.environment["PATHSHELF_SMOKE_CAPTURE_PATH"] {
+            do {
+                try panelController?.capturePanel(
+                    to: URL(fileURLWithPath: capturePath)
+                )
+                smokePrint("SMOKE panelCaptureReady=true")
+            } catch {
+                smokePrint("SMOKE panelCaptureReady=false")
+                smokePrint("SMOKE panelCaptureError=\(String(describing: error))")
+            }
+        }
         let keyboardReauthorizationProbe =
             await panelController?.runKeyboardReauthorizationStateProbe(
                 in: fixtureURL.appendingPathComponent("Existing", isDirectory: true)
@@ -373,6 +399,15 @@ final class PathShelfApp: NSObject, NSApplicationDelegate, NSMenuItemValidation 
         smokePrint("SMOKE appNameVisible=\(appNameVisible)")
         smokePrint("SMOKE layoutReady=\(panelController?.isLayoutReady == true)")
         smokePrint("SMOKE interactionsReady=\(panelController?.areInteractionsReady == true)")
+        smokePrint("SMOKE searchControlReady=\(filterProbe.searchControlReady)")
+        smokePrint("SMOKE searchAccessibilityReady=\(filterProbe.accessibilityReady)")
+        smokePrint("SMOKE searchKeyboardFocusReady=\(filterProbe.keyboardFocusReady)")
+        smokePrint("SMOKE searchEscapeClearReady=\(filterProbe.escapeClearReady)")
+        smokePrint("SMOKE loadingStateReady=\(filterProbe.loadingStateReady)")
+        smokePrint("SMOKE filterNarrowsItems=\(filterProbe.narrowsItems)")
+        smokePrint("SMOKE filterNoResultsReady=\(filterProbe.showsNoResults)")
+        smokePrint("SMOKE filterClearRestores=\(filterProbe.clearsFilter)")
+        smokePrint("SMOKE filterCaptureReady=\(filterProbe.captureReady)")
         smokePrint("SMOKE thumbnailRenderingPolicyReady=\(panelController?.thumbnailRenderingPolicyReady == true)")
         smokePrint("SMOKE interactionProbePassed=\(interactionProbe?.passed == true)")
         smokePrint("SMOKE interactionProbe=\(interactionProbe?.diagnostics ?? "unavailable")")
@@ -705,6 +740,142 @@ final class FloatingPanelController {
         return await contentView?.runSmokeActions(fixtureURL: fixtureURL) ?? model.snapshot
     }
 
+    func runFilterProbe(
+        fixtureURL: URL,
+        captureDirectoryURL: URL?
+    ) async -> PanelFilterProbeResult {
+        guard let contentView else {
+            return .unavailable
+        }
+
+        var loadingCaptureReady = true
+        contentView.onLoadingPresented = { [weak self] in
+            guard let self, let captureDirectoryURL else {
+                return
+            }
+            do {
+                try capturePanel(
+                    to: captureDirectoryURL.appendingPathComponent("panel-loading.png")
+                )
+            } catch {
+                loadingCaptureReady = false
+            }
+        }
+        await model.navigateToPathBarLocation(fixtureURL)
+        contentView.onLoadingPresented = nil
+        contentView.refreshTablesAndThumbnails()
+        let unfilteredNames = model.items.map(\.name)
+        let searchControlReady = contentView.searchField.isHidden == false
+            && contentView.searchField.action != nil
+            && contentView.searchField.placeholderString == "Filter current folder"
+        let accessibilityReady = contentView.searchField.accessibilityLabel()
+            == "Filter current folder"
+            && contentView.searchField.accessibilityIdentifier()
+                == "pathshelf.filter.current-folder"
+        let loadingStateReady = contentView.loadingPresentationCount > 0
+            && loadingCaptureReady
+        let commandFEvent = NSEvent.keyEvent(
+            with: .keyDown,
+            location: .zero,
+            modifierFlags: .command,
+            timestamp: 0,
+            windowNumber: panel?.windowNumber ?? 0,
+            context: nil,
+            characters: "f",
+            charactersIgnoringModifiers: "f",
+            isARepeat: false,
+            keyCode: UInt16(kVK_ANSI_F)
+        )
+        if let commandFEvent {
+            contentView.fileTable.keyDown(with: commandFEvent)
+        }
+        let keyboardFocusReady = panel?.firstResponder
+            === contentView.searchField.currentEditor()
+
+        var captureReady = loadingCaptureReady
+        contentView.applyFilterQuery("alpha")
+        let narrowsItems = model.items.map(\.name) == ["alpha.txt"]
+            && contentView.statusLabel.stringValue == "1 of 3 items"
+        captureReady = await captureFilterState(
+            named: "panel-filter-active.png",
+            in: captureDirectoryURL
+        ) && captureReady
+        let escapeEvent = NSEvent.keyEvent(
+            with: .keyDown,
+            location: .zero,
+            modifierFlags: [],
+            timestamp: 0,
+            windowNumber: panel?.windowNumber ?? 0,
+            context: nil,
+            characters: "\u{1B}",
+            charactersIgnoringModifiers: "\u{1B}",
+            isARepeat: false,
+            keyCode: UInt16(kVK_Escape)
+        )
+        if let escapeEvent {
+            contentView.fileTable.keyDown(with: escapeEvent)
+        }
+        let escapeClearReady = model.filterQuery.isEmpty
+            && model.items.map(\.name) == unfilteredNames
+            && isPanelVisible
+
+        contentView.applyFilterQuery("no-match-sentinel")
+        let showsNoResults = model.items.isEmpty
+            && contentView.browserStateView.isHidden == false
+            && contentView.statusLabel.stringValue == "0 of 3 items"
+        let stateAccessibilityReady =
+            contentView.searchField.accessibilityValue() == "no-match-sentinel"
+            && contentView.statusLabel.accessibilityValue() == "0 of 3 items"
+            && contentView.browserStateView.accessibilityLabel()?
+                .contains("no-match-sentinel") == true
+        captureReady = await captureFilterState(
+            named: "panel-filter-empty.png",
+            in: captureDirectoryURL
+        ) && captureReady
+
+        contentView.applyFilterQuery("")
+        let clearsFilter = model.items.map(\.name) == unfilteredNames
+            && contentView.browserStateView.isHidden
+            && contentView.statusLabel.stringValue == "3 items"
+        captureReady = await captureFilterState(
+            named: "panel-filter-cleared.png",
+            in: captureDirectoryURL
+        ) && captureReady
+
+        return PanelFilterProbeResult(
+            searchControlReady: searchControlReady,
+            accessibilityReady: accessibilityReady && stateAccessibilityReady,
+            keyboardFocusReady: keyboardFocusReady,
+            escapeClearReady: escapeClearReady,
+            loadingStateReady: loadingStateReady,
+            narrowsItems: narrowsItems,
+            showsNoResults: showsNoResults,
+            clearsFilter: clearsFilter,
+            captureReady: captureReady
+        )
+    }
+
+    private func captureFilterState(
+        named fileName: String,
+        in directoryURL: URL?
+    ) async -> Bool {
+        guard let directoryURL else {
+            return true
+        }
+        await withCheckedContinuation {
+            (continuation: CheckedContinuation<Void, Never>) in
+            DispatchQueue.main.async {
+                continuation.resume()
+            }
+        }
+        do {
+            try capturePanel(to: directoryURL.appendingPathComponent(fileName))
+            return true
+        } catch {
+            return false
+        }
+    }
+
     func runColdInteractiveProbe() async -> BrowserSnapshot {
         let panel = panel ?? makePanel()
         self.panel = panel
@@ -779,6 +950,22 @@ final class FloatingPanelController {
 
     var usesNormalWindowLevel: Bool {
         panel?.level == .normal
+    }
+
+    func capturePanel(to url: URL) throws {
+        guard let contentView = panel?.contentView,
+              let representation = contentView.bitmapImageRepForCachingDisplay(
+                  in: contentView.bounds
+              ) else {
+            throw CocoaError(.fileWriteUnknown)
+        }
+        contentView.layoutSubtreeIfNeeded()
+        contentView.display()
+        contentView.cacheDisplay(in: contentView.bounds, to: representation)
+        guard let data = representation.representation(using: .png, properties: [:]) else {
+            throw CocoaError(.fileWriteUnknown)
+        }
+        try data.write(to: url, options: .atomic)
     }
 
     private func preparePanel(mode: PanelPlacementMode, cursor: CGPoint, screens: [NSScreen]) -> NSPanel {

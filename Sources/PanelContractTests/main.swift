@@ -10,6 +10,9 @@ struct PanelContractTests {
         let tests: [(String, () async throws -> Void)] = [
             ("browser starts at home and enumerates fixture items", testInitialHomeEnumeration),
             ("visible files default to kind sorting and support alternate columns", testFileSorting),
+            ("filter query narrows visible items", testFilterQueryNarrowsVisibleItems),
+            ("clearing filter restores directory items", testClearingFilterRestoresDirectoryItems),
+            ("loading state brackets directory enumeration", testLoadingStateBracketsDirectoryEnumeration),
             ("activating a selected directory enters that directory", testDirectoryActivation),
             ("browser can start at a configured default location while Home remains stable", testConfiguredInitialLocation),
             ("path bar navigation opens the selected directory component", testPathBarNavigation),
@@ -347,6 +350,87 @@ struct PanelContractTests {
         model.setSortOrder(.modifiedNewest)
         try expect(model.items.first?.name == "alpha.txt")
         try expect(model.items.last?.name == "Middle")
+    }
+
+    @MainActor
+    private static func testFilterQueryNarrowsVisibleItems() async throws {
+        let fixture = try TemporaryDirectory()
+        for name in ["Alpha Report.txt", "Beta Notes.txt", "Budget 2026.txt"] {
+            try Data(name.utf8).write(to: fixture.url.appendingPathComponent(name))
+        }
+        let model = makeModel(home: fixture.url)
+
+        await model.loadInitialState()
+        model.setSortOrder(.nameAscending)
+        model.setFilterQuery("BUDGET")
+
+        try expect(model.filterQuery == "BUDGET")
+        try expect(model.unfilteredItemCount == 3)
+        try expect(
+            model.items.map(\.name) == ["Budget 2026.txt"],
+            "filter should use case-insensitive filename matching"
+        )
+    }
+
+    @MainActor
+    private static func testClearingFilterRestoresDirectoryItems() async throws {
+        let fixture = try TemporaryDirectory()
+        for name in ["Alpha Report.txt", "Beta Notes.txt", "Budget 2026.txt"] {
+            try Data(name.utf8).write(to: fixture.url.appendingPathComponent(name))
+        }
+        let model = makeModel(home: fixture.url)
+
+        await model.loadInitialState()
+        model.setSortOrder(.nameAscending)
+        model.setFilterQuery("notes")
+        try expect(model.items.map(\.name) == ["Beta Notes.txt"])
+
+        model.setFilterQuery("")
+
+        try expect(model.filterQuery.isEmpty)
+        try expect(
+            model.items.map(\.name) == [
+                "Alpha Report.txt",
+                "Beta Notes.txt",
+                "Budget 2026.txt"
+            ],
+            "clearing the filter should restore the full directory snapshot"
+        )
+    }
+
+    @MainActor
+    private static func testLoadingStateBracketsDirectoryEnumeration() async throws {
+        let fixture = try TemporaryDirectory()
+        try Data("alpha".utf8).write(to: fixture.url.appendingPathComponent("alpha.txt"))
+        let gate = EnumerationGate()
+        let model = makeModel(
+            home: fixture.url,
+            enumerate: { url in
+                await gate.suspendEnumeration()
+                return try await DirectoryEnumerator().enumerate(url)
+            }
+        )
+        var transitions: [Bool] = []
+        model.onLoadingStateChange = { transitions.append($0) }
+
+        let loadTask = Task {
+            await model.loadInitialState()
+        }
+        try await withTimeout {
+            await gate.waitUntilStarted()
+        }
+
+        try expect(model.isLoading)
+        try expect(transitions == [true])
+
+        await gate.release()
+        try await withTimeout {
+            await loadTask.value
+        }
+
+        try expect(model.isLoading == false)
+        try expect(transitions == [true, false])
+        try expect(model.items.map(\.name) == ["alpha.txt"])
     }
 
     @MainActor
@@ -862,6 +946,38 @@ private final class LockedBox<Value>: @unchecked Sendable {
     }
 }
 
+private actor EnumerationGate {
+    private var started = false
+    private var startedWaiters: [CheckedContinuation<Void, Never>] = []
+    private var releaseContinuation: CheckedContinuation<Void, Never>?
+
+    func waitUntilStarted() async {
+        guard started == false else {
+            return
+        }
+        await withCheckedContinuation { continuation in
+            startedWaiters.append(continuation)
+        }
+    }
+
+    func suspendEnumeration() async {
+        started = true
+        let waiters = startedWaiters
+        startedWaiters.removeAll()
+        for waiter in waiters {
+            waiter.resume()
+        }
+        await withCheckedContinuation { continuation in
+            releaseContinuation = continuation
+        }
+    }
+
+    func release() {
+        releaseContinuation?.resume()
+        releaseContinuation = nil
+    }
+}
+
 private struct PanelContractFailure: Error, CustomStringConvertible {
     var description: String
 
@@ -890,4 +1006,23 @@ private func unwrap<Value>(_ value: Value?) throws -> Value {
         throw PanelContractFailure("Expected non-nil value")
     }
     return value
+}
+
+private func withTimeout<Value: Sendable>(
+    _ operation: @escaping @Sendable () async throws -> Value
+) async throws -> Value {
+    try await withThrowingTaskGroup(of: Value.self) { group in
+        group.addTask {
+            try await operation()
+        }
+        group.addTask {
+            try await Task.sleep(for: .seconds(2))
+            throw PanelContractFailure("Timed out waiting for async contract signal")
+        }
+        guard let value = try await group.next() else {
+            throw PanelContractFailure("Async contract signal produced no result")
+        }
+        group.cancelAll()
+        return value
+    }
 }

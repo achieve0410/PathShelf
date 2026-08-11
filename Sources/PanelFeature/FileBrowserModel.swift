@@ -198,8 +198,11 @@ public final class FileBrowserModel {
     public private(set) var generation = 0
     public private(set) var teardownCount = 0
     public private(set) var sortOrder: FileSortOrder = .kindThenName
+    public private(set) var filterQuery = ""
+    public var onLoadingStateChange: ((Bool) -> Void)?
 
     private let environment: FileBrowserEnvironment
+    private var directoryItems: [FileItem] = []
     private var history: [URL] = []
     private let configuredInitialRoot: URL?
     private var activeScopedURL: SecurityScopedURL?
@@ -226,6 +229,10 @@ public final class FileBrowserModel {
             return nil
         }
         return items[selectedIndex]
+    }
+
+    public var unfilteredItemCount: Int {
+        directoryItems.count
     }
 
     public func loadInitialState() async {
@@ -328,10 +335,14 @@ public final class FileBrowserModel {
     public func setSortOrder(_ order: FileSortOrder) {
         let selectedURL = selectedItem?.url
         sortOrder = order
-        items = order.sorted(items)
-        selectedIndex = selectedURL.flatMap { selectedURL in
-            items.firstIndex { $0.url == selectedURL }
-        }
+        directoryItems = order.sorted(directoryItems)
+        updateVisibleItems(preserving: selectedURL)
+    }
+
+    public func setFilterQuery(_ query: String) {
+        let selectedURL = selectedItem?.url
+        filterQuery = query
+        updateVisibleItems(preserving: selectedURL)
     }
 
     public func addSavedLocation(url: URL, displayName: String? = nil) throws {
@@ -657,6 +668,7 @@ public final class FileBrowserModel {
         generation += 1
         teardownCount += 1
         selectedIndex = nil
+        setLoading(false)
         environment.previewController?.close()
         closeActiveScopedURL()
     }
@@ -726,10 +738,13 @@ public final class FileBrowserModel {
     private func navigate(to directoryURL: URL, recordHistory: Bool) async {
         let directoryURL = directoryURL.standardizedFileURL
         let previousURL = currentDirectoryURL
+        if directoryURL != previousURL {
+            filterQuery = ""
+        }
         closeActiveScopeIfNeeded(for: directoryURL)
         currentDirectoryURL = directoryURL
         availability = .available
-        isLoading = true
+        setLoading(true)
         selectedIndex = nil
         generation += 1
         let requestGeneration = generation
@@ -742,19 +757,21 @@ public final class FileBrowserModel {
             if recordHistory {
                 history.append(previousURL)
             }
-            items = sortOrder.sorted(result.items)
+            directoryItems = sortOrder.sorted(result.items)
+            updateVisibleItems(preserving: nil)
             lastErrorMessage = nil
             replaceVisibleDirectoryMonitorRoot()
         } catch {
             guard requestGeneration == generation else {
                 return
             }
+            directoryItems = []
             items = []
             availability = .unavailable(.unavailable, directoryURL.path)
             lastErrorMessage = "Could not open this folder."
             replaceVisibleDirectoryMonitorRoot()
         }
-        isLoading = false
+        setLoading(false)
     }
 
     private func replaceVisibleDirectoryMonitorRoot() {
@@ -766,6 +783,27 @@ public final class FileBrowserModel {
                 await self?.handleVisibleDirectoryEvent(generation: eventGeneration, event: event)
             }
         }
+    }
+
+    private func updateVisibleItems(preserving selectedURL: URL?) {
+        if filterQuery.isEmpty {
+            items = directoryItems
+        } else {
+            items = directoryItems.filter {
+                $0.name.localizedCaseInsensitiveContains(filterQuery)
+            }
+        }
+        selectedIndex = selectedURL.flatMap { selectedURL in
+            items.firstIndex { $0.url == selectedURL }
+        }
+    }
+
+    private func setLoading(_ loading: Bool) {
+        guard isLoading != loading else {
+            return
+        }
+        isLoading = loading
+        onLoadingStateChange?(loading)
     }
 
     private func handleVisibleDirectoryEvent(generation eventGeneration: Int, event: DirectoryEvent) async {
@@ -980,6 +1018,7 @@ public final class FileBrowserModel {
                 environment.closeSecurityScopedURL(scopedURL)
             }
             availability = .unavailable(candidate[index].availability, resolution.originalPath)
+            directoryItems = []
             items = []
             selectedIndex = nil
             let message = FileBrowserError.selectedLocationUnavailable(
@@ -1098,9 +1137,10 @@ public final class FileBrowserModel {
             ? .networkUnavailable
             : .disconnected
         availability = .unavailable(nextAvailability, currentDirectoryURL.path)
+        directoryItems = []
         items = []
         selectedIndex = nil
-        isLoading = false
+        setLoading(false)
         generation += 1
         lastErrorMessage = FileBrowserError.selectedLocationUnavailable(
             nextAvailability,

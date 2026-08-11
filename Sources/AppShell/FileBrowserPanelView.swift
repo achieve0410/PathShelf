@@ -10,6 +10,30 @@ struct KeyboardReauthorizationProbeResult {
     var preservesBrowserState: Bool
 }
 
+struct PanelFilterProbeResult {
+    let searchControlReady: Bool
+    let accessibilityReady: Bool
+    let keyboardFocusReady: Bool
+    let escapeClearReady: Bool
+    let loadingStateReady: Bool
+    let narrowsItems: Bool
+    let showsNoResults: Bool
+    let clearsFilter: Bool
+    let captureReady: Bool
+
+    static let unavailable = PanelFilterProbeResult(
+        searchControlReady: false,
+        accessibilityReady: false,
+        keyboardFocusReady: false,
+        escapeClearReady: false,
+        loadingStateReady: false,
+        narrowsItems: false,
+        showsNoResults: false,
+        clearsFilter: false,
+        captureReady: false
+    )
+}
+
 @MainActor
 final class PanelContentView: NSView, NSMenuItemValidation {
     static let favoriteGroupIconChoices: [(title: String, symbol: String)] = [
@@ -29,11 +53,13 @@ final class PanelContentView: NSView, NSMenuItemValidation {
     let settingsStore: SettingsStore
     let quickLookCoordinator: QuickLookPanelCoordinator
     let pathControl = PathBarControl()
+    let searchField = FilterSearchField()
     let statusLabel = NSTextField(labelWithString: "")
     let sidebarTitleLabel = NSTextField(labelWithString: "FAVORITES")
     let browserStateView = BrowserStateView()
     let sidebarTable = KeyHandlingTableView()
     let fileTable = KeyHandlingTableView()
+    weak var searchBarView: NSView?
     weak var bottomBarView: NSView?
     weak var splitView: NSSplitView?
     weak var sidebarScrollView: NSScrollView?
@@ -41,6 +67,8 @@ final class PanelContentView: NSView, NSMenuItemValidation {
     let sidebarDataSource: SavedLocationTableDataSource
     let fileDataSource: FileTableDataSource
     private(set) var toolbarControlCount = 0
+    private(set) var loadingPresentationCount = 0
+    var onLoadingPresented: (() -> Void)?
     private var loadTask: Task<Void, Never>?
     var thumbnailTasks: [URL: Task<Void, Never>] = [:]
     var isTornDown = false
@@ -68,6 +96,16 @@ final class PanelContentView: NSView, NSMenuItemValidation {
         super.init(frame: .zero)
         focusView.contentView = self
         setup()
+        model.onLoadingStateChange = { [weak self] isLoading in
+            guard let self else {
+                return
+            }
+            refreshTables()
+            if isLoading && browserStateView.currentTitle == "Loading…" {
+                loadingPresentationCount += 1
+                onLoadingPresented?()
+            }
+        }
     }
 
     override init(frame frameRect: NSRect) {
