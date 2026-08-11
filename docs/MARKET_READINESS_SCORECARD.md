@@ -9,14 +9,15 @@ sufficient market value.
 
 - Baseline: **55/100**
 - After market cycle 1: **57/100**
+- After market cycle 2: **59/100**
 - Sufficient-market-value threshold: **70/100**
 - Required floor: problem intensity, willingness to pay, and distribution must
   each be at least 50
 
-Cycle 1 improves release-pipeline readiness and closes an authorization
-boundary defect. It does **not** create a public notarized download, paying
-customers, or usage-retention evidence. Those missing facts remain the main
-reason the product is below the threshold.
+Cycle 2 makes the core Favorite workflow discoverable from the primary panel,
+keyboard-operable, and explicit to VoiceOver. It does **not** create a public
+notarized download, paying customers, or usage-retention evidence. Those
+missing facts remain the main reason the product is below the threshold.
 
 ## Method
 
@@ -24,17 +25,41 @@ The score is the equal-weight mean of seven dimensions. Public product facts
 and captured repository evidence constrain each score. Point changes are
 explicit inference, not measured market outcomes.
 
-| Dimension | Baseline | Cycle 1 | Evidence and interpretation |
-|---|---:|---:|---|
-| Problem intensity | 50 | **50** | Established launchers and file utilities confirm recurring demand, but PathShelf has no interview, activation, or retention data. |
-| Differentiation | 58 | **58** | Local-only operation, explicit folder grants, and no global index remain a useful privacy wedge. Cycle 1 does not broaden that wedge. |
-| Usability | 63 | **63** | The panel remains fast and focused. The authorization guard prevents an invalid transition but does not materially improve first-use discovery. |
-| Trust/privacy | 88 | **90** | Path-bar navigation now preserves the active Favorite permission boundary before URL, filter, history, visible-item, or scope mutation. |
-| Reliability | 62 | **68** | A deterministic 28th panel contract, native smoke marker, AppKit capture, OS-level screenshot, 125-contract suite, and fail-closed package checks reduce known failure risk. Public field reliability is still unknown. |
-| Willingness to pay | 40 | **40** | Alfred and Raycast provide category price anchors, not proof that users will pay for PathShelf's narrower workflow. No offer or conversion result exists. |
-| Distribution | 24 | **32** | A manual Developer ID/notarization workflow and verified local-QA archive now exist. No credentials were used, no workflow was run, and no public notarized binary was published. |
+| Dimension | Baseline | Cycle 1 | Cycle 2 | Evidence and interpretation |
+|---|---:|---:|---:|---|
+| Problem intensity | 50 | 50 | **50** | Established launchers and file utilities confirm recurring demand, but PathShelf has no interview, activation, or retention data. |
+| Differentiation | 58 | 58 | **58** | Local-only operation, explicit folder grants, and no global index remain a useful privacy wedge. Cycle 2 does not broaden that wedge. |
+| Usability | 63 | 63 | **72** | The primary panel now has a visible native `Add Favorite…` action, and Return activates the selected Favorite. |
+| Trust/privacy | 88 | 90 | **90** | The permission boundary remains guarded; cycle 2 adds no new data collection or network access. |
+| Reliability | 62 | 68 | **71** | RED-to-GREEN native smoke covers add-control wiring, awaited keyboard activation, and accessibility state. All 125 contracts and existing smoke markers remain green. |
+| Willingness to pay | 40 | 40 | **40** | Alfred and Raycast provide category price anchors, not proof that users will pay for PathShelf's narrower workflow. No offer or conversion result exists. |
+| Distribution | 24 | 32 | **32** | A manual Developer ID/notarization workflow and verified local-QA archive exist, but no notarized public binary was published. |
 
-Arithmetic: `(50 + 58 + 63 + 90 + 68 + 40 + 32) / 7 = 57.3`.
+Arithmetic: `(50 + 58 + 72 + 90 + 71 + 40 + 32) / 7 = 59.0`.
+
+## What cycle 2 shipped
+
+### Favorite discovery and keyboard access
+
+- The sidebar footer exposes a native `Add Favorite…` action with the
+  `pathshelf.favorite.add` accessibility identifier.
+- The action routes to the existing security-scoped folder chooser path.
+- Return activates the selected Favorite and awaits the resulting navigation
+  task in deterministic smoke coverage.
+
+### VoiceOver semantics
+
+- Group disclosure rows expose labels and `expanded` / `collapsed` values.
+- Healthy Favorite rows identify themselves as Favorites.
+- Unavailable Favorite rows expose their availability state without relying
+  on icon color or styling alone.
+
+RED evidence captured all three smoke markers as false before implementation.
+GREEN evidence and the complete final run capture all three as true. Fresh
+native AppKit screenshots show the add action without clipping or overlap.
+Independent OS-level chooser capture was not accepted because the isolated QA
+window remained 0×0 in WindowServer while a user-owned PathShelf process was
+preserved; that limitation receives no score credit.
 
 ## What cycle 1 shipped
 
@@ -98,24 +123,22 @@ for PathShelf.
 Expected score effect if measured: willingness to pay **40 → 55**, overall
 approximately **+2.1**.
 
-### 3. First-use Favorite discoverability and keyboard access
+### 3. Measured activation and retention
 
-**Current gap:** the highest-value controllable product gap is now Favorites
-discovery and accessibility. Add actions remain context-menu-led, Return is
-not wired for sidebar activation, and disclosure/location rows lack complete
-VoiceOver semantics.
+**Current gap:** Favorite discovery and keyboard / VoiceOver access are now
+implemented, but there is no evidence that target users complete setup,
+activate the panel repeatedly, or retain the workflow.
 
-**Next implementation cycle:**
+**Required evidence:**
 
-- Put an obvious native add action in the empty/default Favorites surface.
-- Make Return activate the selected Favorite.
-- Expose expanded/collapsed state and explicit Favorite row labels.
-- Keep the panel minimal; do not add a global index or broad toolbar.
+1. Publish an authorized notarized beta to a defined target cohort.
+2. Record opt-in, privacy-preserving setup completion and weekly-use evidence.
+3. Interview users who abandon setup and those who retain the workflow.
+4. Use measured results rather than repository completeness to change problem
+   intensity, willingness to pay, or retention-related reliability scores.
 
-Expected score effect after verified implementation: usability **63 → 72** and
-reliability **68 → 71**, overall approximately **+1.7**. This alone cannot
-reach 70; it is the next local improvement while distribution and demand
-evidence require authorized external action.
+The next local cycle can make this experiment auditable and consent-based, but
+cannot manufacture activation, retention, or willingness-to-pay outcomes.
 
 ## Evidence
 
@@ -125,6 +148,10 @@ Repository evidence:
 - `.omo/evidence/market-cycle-1/distribution/README.md`
 - `.omo/evidence/market-cycle-1/path-boundary/README.md`
 - `.omo/evidence/market-cycle-1/final/README.md`
+- `.omo/evidence/market-cycle-2/red/README.md`
+- `.omo/evidence/market-cycle-2/green/README.md`
+- `.omo/evidence/market-cycle-2/final/README.md`
+- `.omo/evidence/market-cycle-2/os/README.md`
 
 Public sources:
 
@@ -139,7 +166,7 @@ Public sources:
 ## Conclusion
 
 PathShelf is technically credible and meaningfully privacy-oriented, but
-**57/100 is below the 70/100 stop threshold**. The improvement loop must
-continue. The next controllable cycle is Favorite discovery and keyboard /
-VoiceOver access; real market-value closure still requires a notarized public
+**59/100 is below the 70/100 stop threshold**. The improvement loop must
+continue. The next controllable cycle is an auditable, opt-in beta-validation
+path; real market-value closure still requires an authorized notarized public
 binary and measured demand.

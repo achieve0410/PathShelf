@@ -44,6 +44,18 @@ struct PathBarBoundaryProbeResult {
     )
 }
 
+struct FavoriteUsabilityProbeResult {
+    let addControlReady: Bool
+    let returnActivationReady: Bool
+    let accessibilityReady: Bool
+
+    static let unavailable = FavoriteUsabilityProbeResult(
+        addControlReady: false,
+        returnActivationReady: false,
+        accessibilityReady: false
+    )
+}
+
 @MainActor
 final class PanelContentView: NSView, NSMenuItemValidation {
     static let favoriteGroupIconChoices: [(title: String, symbol: String)] = [
@@ -66,6 +78,7 @@ final class PanelContentView: NSView, NSMenuItemValidation {
     let searchField = FilterSearchField()
     let statusLabel = NSTextField(labelWithString: "")
     let sidebarTitleLabel = NSTextField(labelWithString: "FAVORITES")
+    let addFavoriteButton = NSButton()
     let browserStateView = BrowserStateView()
     let sidebarTable = KeyHandlingTableView()
     let fileTable = KeyHandlingTableView()
@@ -80,6 +93,7 @@ final class PanelContentView: NSView, NSMenuItemValidation {
     private(set) var loadingPresentationCount = 0
     var onLoadingPresented: (() -> Void)?
     private var loadTask: Task<Void, Never>?
+    var favoriteActivationTask: Task<Void, Never>?
     var thumbnailTasks: [URL: Task<Void, Never>] = [:]
     var isTornDown = false
     var contextItemURL: URL?
@@ -252,6 +266,8 @@ final class PanelContentView: NSView, NSMenuItemValidation {
         isTornDown = true
         loadTask?.cancel()
         loadTask = nil
+        favoriteActivationTask?.cancel()
+        favoriteActivationTask = nil
         cancelThumbnailRequests()
         quickLookCoordinator.close()
         model.teardown()
@@ -313,6 +329,121 @@ final class PanelContentView: NSView, NSMenuItemValidation {
             && model.filterQuery == "inside"
             && pathControl.url == childURL.standardizedFileURL
             && fileTable.numberOfRows == 1
+    }
+
+    func runFavoriteUsabilityProbe(
+        fixtureURL: URL
+    ) async -> FavoriteUsabilityProbeResult {
+        await model.loadInitialState()
+        if model.savedLocations.contains(where: {
+            $0.bookmark.originalPath == fixtureURL.path
+        }) == false {
+            try? model.addSavedLocation(url: fixtureURL, displayName: "Fixture")
+        }
+        sidebarTable.reloadData()
+
+        let addButton = descendantButton(
+            in: self,
+            accessibilityIdentifier: "pathshelf.favorite.add"
+        )
+        let addControlReady = addButton?.title == "Add Favorite…"
+            && addButton?.action == #selector(addSavedLocation(_:))
+            && addButton?.target === self
+            && addButton?.accessibilityLabel() == "Add Favorite"
+
+        let visibleItems = sidebarDataSource.visibleItems
+        let groupRow = visibleItems.firstIndex {
+            if case .group = $0 {
+                return true
+            }
+            return false
+        }
+        let locationRow = visibleItems.firstIndex {
+            if case .location = $0 {
+                return true
+            }
+            return false
+        }
+        let groupCell = groupRow.flatMap {
+            sidebarTable.view(atColumn: 0, row: $0, makeIfNecessary: true)
+        }
+        let locationCell = locationRow.flatMap {
+            sidebarTable.view(atColumn: 0, row: $0, makeIfNecessary: true)
+        }
+        let disclosureButton = groupCell.flatMap {
+            firstButton(in: $0)
+        }
+        let accessibilityReady = disclosureButton?.accessibilityLabel()
+            == "Default Group"
+            && disclosureButton?.accessibilityValue() as? String == "expanded"
+            && locationCell?.accessibilityLabel() == "Favorite Fixture, available"
+
+        var returnActivationReady = false
+        if let locationRow {
+            sidebarTable.selectRowIndexes(
+                IndexSet(integer: locationRow),
+                byExtendingSelection: false
+            )
+            favoriteActivationTask = nil
+            let returnEvent = NSEvent.keyEvent(
+                with: .keyDown,
+                location: .zero,
+                modifierFlags: [],
+                timestamp: 0,
+                windowNumber: window?.windowNumber ?? 0,
+                context: nil,
+                characters: "\r",
+                charactersIgnoringModifiers: "\r",
+                isARepeat: false,
+                keyCode: 36
+            )
+            if let returnEvent {
+                sidebarTable.keyDown(with: returnEvent)
+            }
+            if let favoriteActivationTask {
+                await favoriteActivationTask.value
+                returnActivationReady = model.currentDirectoryURL
+                    == fixtureURL.standardizedFileURL
+                    && model.items.map(\.name).contains("alpha.txt")
+            }
+        }
+
+        return FavoriteUsabilityProbeResult(
+            addControlReady: addControlReady,
+            returnActivationReady: returnActivationReady,
+            accessibilityReady: accessibilityReady
+        )
+    }
+
+    private func descendantButton(
+        in view: NSView,
+        accessibilityIdentifier: String
+    ) -> NSButton? {
+        if let button = view as? NSButton,
+           button.accessibilityIdentifier() == accessibilityIdentifier {
+            return button
+        }
+        for child in view.subviews {
+            if let button = descendantButton(
+                in: child,
+                accessibilityIdentifier: accessibilityIdentifier
+            ) {
+                return button
+            }
+        }
+        return nil
+    }
+
+    private func firstButton(in view: NSView) -> NSButton? {
+        if let button = view as? NSButton {
+            return button
+        }
+        for child in view.subviews {
+            if let button = firstButton(in: child) {
+                return button
+            }
+        }
+        return nil
     }
 
     func runColdInteractiveProbe() async -> BrowserSnapshot {
