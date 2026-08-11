@@ -79,7 +79,8 @@
 - Filtering: filter the already loaded current directory by locale-aware, case-insensitive filename matching; retain the active query across refreshes of the same directory and clear it when navigation changes location
 - No results: show a centered magnifying-glass symbol, `No matching items`, and a concise query-specific detail; keep `0 of n items` in the bottom bar
 - Error: show a centered warning state with a concise title and the model error detail while retaining the error in the bottom status line
-- Success: update filter results as the user types; clearing the query restores the full current-directory snapshot immediately; refresh the visible directory or Favorites immediately; path-component clicks navigate immediately; folder-access grants report their result in the Access pane
+- Success: update filter results as the user types; clearing the query restores the full current-directory snapshot immediately; refresh the visible directory or Favorites immediately; path-component clicks inside the active Home/configured/Favorite navigation root navigate immediately; folder-access grants report their result in the Access pane
+- Navigation boundary: a path-component target outside the active navigation root is ignored before URL, history, filter, visible items, or security-scope state changes
 - Disabled: selection-dependent contextual actions are unavailable without a selected row
 - Favorite organization: disclosure controls expand or collapse each group for the current app session; right-click creates, renames, changes the icon of, reorders, or deletes groups; dragging a Favorite onto a group moves it into that group, dragging between Favorites reorders it, and deleting a group returns its contents to Default Group
 - Offline/slow network: local content works normally; provider-backed placeholders and mounted shares remain OS/provider responsibilities
@@ -96,7 +97,7 @@
 - Design-token constraints: use AppKit semantic colors, fonts, spacing, and controls
 - Performance constraints: no polling, background indexing, or hidden-panel work; sorting and filtering are in-memory over the loaded current directory
 - Compatibility constraints: macOS 15+, arm64, offline-first
-- Test/screenshot expectations: contract tests cover sort behavior, filename filter/clear restoration, directory activation, and path-component navigation; smoke verifies the 1080×580 layout, labeled Favorites area, native search field and no-results state, bottom path bar/action, right-aligned result status, absence of panel navigation toolbar controls, native Settings toolbar/access guidance, and resizable panel
+- Test/screenshot expectations: contract tests cover sort behavior, filename filter/clear restoration, directory activation, positive path-component navigation, and rejection outside an active Favorite root; smoke verifies the 1080×580 layout, labeled Favorites area, native search field and no-results state, retained authorized path after a rejected component target, bottom path bar/action, right-aligned result status, absence of panel navigation toolbar controls, native Settings toolbar/access guidance, and resizable panel
 
 ## Accepted design debt
 

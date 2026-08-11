@@ -357,6 +357,18 @@ final class PathShelfApp: NSObject, NSApplicationDelegate, NSMenuItemValidation 
             fixtureURL: fixtureURL,
             captureDirectoryURL: filterCaptureDirectoryURL
         ) ?? .unavailable
+        let pathBarBoundaryProbe = await panelController?.runPathBarBoundaryProbe(
+            fixtureURL: fixtureURL,
+            captureDirectoryURL: filterCaptureDirectoryURL
+        ) ?? .unavailable
+        if ProcessInfo.processInfo.environment[
+            "PATHSHELF_SMOKE_HOLD_PATH_BOUNDARY"
+        ] == "1" {
+            smokePrint("SMOKE pathBarBoundaryPreserved=\(pathBarBoundaryProbe.preserved)")
+            smokePrint("SMOKE pathBarBoundaryCaptureReady=\(pathBarBoundaryProbe.captureReady)")
+            smokePrint("SMOKE pathBarBoundaryHoldReady=true")
+            return
+        }
         let browserSnapshot = await panelController?.runSmokeBrowserProbe(fixtureURL: fixtureURL) ?? BrowserSnapshot(
             currentDirectoryURL: URL(fileURLWithPath: "/"),
             itemNames: [],
@@ -408,6 +420,8 @@ final class PathShelfApp: NSObject, NSApplicationDelegate, NSMenuItemValidation 
         smokePrint("SMOKE filterNoResultsReady=\(filterProbe.showsNoResults)")
         smokePrint("SMOKE filterClearRestores=\(filterProbe.clearsFilter)")
         smokePrint("SMOKE filterCaptureReady=\(filterProbe.captureReady)")
+        smokePrint("SMOKE pathBarBoundaryPreserved=\(pathBarBoundaryProbe.preserved)")
+        smokePrint("SMOKE pathBarBoundaryCaptureReady=\(pathBarBoundaryProbe.captureReady)")
         smokePrint("SMOKE thumbnailRenderingPolicyReady=\(panelController?.thumbnailRenderingPolicyReady == true)")
         smokePrint("SMOKE interactionProbePassed=\(interactionProbe?.passed == true)")
         smokePrint("SMOKE interactionProbe=\(interactionProbe?.diagnostics ?? "unavailable")")
@@ -514,6 +528,16 @@ final class PathShelfApp: NSObject, NSApplicationDelegate, NSMenuItemValidation 
         try FileManager.default.createDirectory(
             at: fixtureURL.appendingPathComponent("Existing", isDirectory: true),
             withIntermediateDirectories: true
+        )
+        let boundaryChild = fixtureURL
+            .appendingPathComponent("Existing", isDirectory: true)
+            .appendingPathComponent("BoundaryChild", isDirectory: true)
+        try FileManager.default.createDirectory(
+            at: boundaryChild,
+            withIntermediateDirectories: true
+        )
+        try Data("inside".utf8).write(
+            to: boundaryChild.appendingPathComponent("inside.txt")
         )
     }
 
@@ -738,6 +762,30 @@ final class FloatingPanelController {
         self.panel = panel
         contentView?.start()
         return await contentView?.runSmokeActions(fixtureURL: fixtureURL) ?? model.snapshot
+    }
+
+    func runPathBarBoundaryProbe(
+        fixtureURL: URL,
+        captureDirectoryURL: URL?
+    ) async -> PathBarBoundaryProbeResult {
+        guard let contentView else {
+            return .unavailable
+        }
+        let preserved = await contentView.runPathBarBoundaryProbe(
+            fixtureURL: fixtureURL
+        )
+        let firstCaptureReady = await captureFilterState(
+            named: "panel-path-boundary.png",
+            in: captureDirectoryURL
+        )
+        let captureReady = await captureFilterState(
+            named: "panel-path-boundary.png",
+            in: captureDirectoryURL
+        ) && firstCaptureReady
+        return PathBarBoundaryProbeResult(
+            preserved: preserved,
+            captureReady: captureReady
+        )
     }
 
     func runFilterProbe(

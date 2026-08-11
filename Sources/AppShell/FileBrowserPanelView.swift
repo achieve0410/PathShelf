@@ -34,6 +34,16 @@ struct PanelFilterProbeResult {
     )
 }
 
+struct PathBarBoundaryProbeResult {
+    let preserved: Bool
+    let captureReady: Bool
+
+    static let unavailable = PathBarBoundaryProbeResult(
+        preserved: false,
+        captureReady: false
+    )
+}
+
 @MainActor
 final class PanelContentView: NSView, NSMenuItemValidation {
     static let favoriteGroupIconChoices: [(title: String, symbol: String)] = [
@@ -268,6 +278,41 @@ final class PanelContentView: NSView, NSMenuItemValidation {
         quickLookCoordinator.present(model.selectedItem?.url)
         prepareForHide()
         return model.snapshot
+    }
+
+    func runPathBarBoundaryProbe(fixtureURL: URL) async -> Bool {
+        await model.loadInitialState()
+        if model.savedLocations.contains(where: {
+            $0.bookmark.originalPath == fixtureURL.path
+        }) == false {
+            try? model.addSavedLocation(url: fixtureURL, displayName: "Boundary Root")
+        }
+        guard let id = model.savedLocations.first(where: {
+            $0.bookmark.originalPath == fixtureURL.path
+        })?.id else {
+            return false
+        }
+
+        do {
+            try await model.navigateToSavedLocation(id: id)
+        } catch {
+            return false
+        }
+        let childURL = fixtureURL
+            .appendingPathComponent("Existing", isDirectory: true)
+            .appendingPathComponent("BoundaryChild", isDirectory: true)
+        await model.navigateToPathBarLocation(childURL)
+        model.setFilterQuery("inside")
+        refreshTablesAndThumbnails()
+
+        await model.navigateToPathBarLocation(fixtureURL.deletingLastPathComponent())
+        refreshTablesAndThumbnails()
+
+        return model.currentDirectoryURL == childURL.standardizedFileURL
+            && model.items.map(\.name) == ["inside.txt"]
+            && model.filterQuery == "inside"
+            && pathControl.url == childURL.standardizedFileURL
+            && fileTable.numberOfRows == 1
     }
 
     func runColdInteractiveProbe() async -> BrowserSnapshot {
