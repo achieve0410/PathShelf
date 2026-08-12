@@ -10,9 +10,9 @@ The app is intentionally local-only: no telemetry, no accounts, no update checks
 
 ## Project Status
 
-PathShelf v0.1.0 is the first public source release. GitHub provides the source
-archives, while users build and run the app locally; no prebuilt app binary is
-included.
+PathShelf v0.2.0 is the current public **source-only checkpoint release**.
+GitHub provides source archives, while users build and run the app locally.
+No prebuilt, Developer ID-signed, or notarized app binary is included.
 
 The project is designed as a reference-quality native utility: file operations
 default to safe outcomes, hidden-panel work is explicitly torn down, and offline
@@ -99,31 +99,154 @@ the same care as other personal configuration backups.
 
 - macOS 15 or later
 - Apple Silicon (`arm64`)
-- Swift Package Manager
+- Xcode Command Line Tools, including Swift Package Manager
 - [ripgrep](https://github.com/BurntSushi/ripgrep) for local tests and audits
 - MIT license
 
-## Build
+## Install For Local Use
 
-From a fresh checkout of the release:
+PathShelf does not currently provide a downloadable `.dmg` or prebuilt `.app`.
+The `Source code (zip)` and `Source code (tar.gz)` files on the GitHub Release
+page are source archives, not directly installable applications.
+
+Use the tagged `v0.2.0` source and build the app locally.
+
+### 1. Install Apple's command-line tools
+
+Open Terminal and run:
 
 ```sh
-git clone --branch v0.1.0 --depth 1 https://github.com/achieve0410/PathShelf.git
+xcode-select --install
+```
+
+If the tools are already installed, macOS reports that no installation is
+needed. Confirm that Swift is available:
+
+```sh
+xcode-select -p
+swift --version
+```
+
+Homebrew and `ripgrep` are not required to build or use PathShelf. They are
+only needed to run the repository's complete test and audit suite.
+
+### 2. Download the v0.2.0 source
+
+Recommended: clone the tagged release with Git:
+
+```sh
+git clone --branch v0.2.0 --depth 1 https://github.com/achieve0410/PathShelf.git
 cd PathShelf
-brew install ripgrep
+```
+
+Alternatively, download **Source code (zip)** from the
+[PathShelf v0.2.0 Release](https://github.com/achieve0410/PathShelf/releases/tag/v0.2.0),
+extract it, open Terminal, type `cd ` including the trailing space, drag the
+extracted folder into Terminal, and press Return.
+
+### 3. Build the app
+
+From the PathShelf source directory:
+
+```sh
+CONFIGURATION=release bash BuildSupport/build-app.sh
+```
+
+The command builds, ad-hoc signs, verifies, and writes:
+
+```text
+.build/PathShelf.app
+```
+
+The generated app is suitable for local evaluation. It is not a Developer
+ID-signed or notarized public binary and should not be redistributed as though
+it were one.
+
+### 4. Move PathShelf to Applications
+
+Open the build directory:
+
+```sh
+open .build
+```
+
+In Finder:
+
+1. Quit an older copy of PathShelf if one is running.
+2. Drag `PathShelf.app` into **Applications**.
+3. Replace the previous copy only if you intentionally want to update it.
+4. Open PathShelf from **Applications**.
+
+Installing to a stable Applications location is recommended before enabling
+**Launch at Login**.
+
+### 5. Complete first-run setup
+
+1. PathShelf opens its Settings window and adds a folder icon to the menu bar.
+2. Open the panel from the menu bar item or configure a global shortcut in
+   **Settings…**.
+3. Select **Add Favorite…** in the panel.
+4. Choose a folder in the native macOS folder picker.
+5. Use Return or double-click to open the selected Favorite.
+6. Enable **Launch at Login** only if desired.
+
+PathShelf receives access only to folders you explicitly choose. Full Disk
+Access is not required for ordinary granted folders; Settings provides guidance
+if a protected location needs additional macOS approval.
+
+### Update a local installation
+
+PathShelf intentionally performs no automatic update checks.
+
+1. Optionally export a configuration backup from
+   **Settings… → General → Export Configuration…**.
+2. Quit PathShelf from its app or menu bar menu.
+3. Download or clone the newer release tag.
+4. Run `CONFIGURATION=release bash BuildSupport/build-app.sh`.
+5. Replace the existing Applications copy with the newly built
+   `.build/PathShelf.app`.
+6. Recheck Launch at Login if macOS reports that approval is required.
+
+Settings and Favorites are stored separately from the app bundle under:
+
+```text
+~/Library/Application Support/PathShelf
+```
+
+Replacing only `PathShelf.app` does not intentionally remove that data.
+
+### Uninstall
+
+1. Disable **Launch at Login** in PathShelf Settings if it is enabled.
+2. Quit PathShelf.
+3. Move `PathShelf.app` from Applications to the Trash.
+
+To also remove local settings, Favorites, and stored folder permissions, open
+Finder, choose **Go → Go to Folder…**, enter the path below, and delete the
+`PathShelf` folder:
+
+```text
+~/Library/Application Support/PathShelf
+```
+
+Export the configuration first if you may want to restore it later.
+
+## Build For Development
+
+From a fresh checkout:
+
+```sh
 swift build --arch arm64
 ```
 
-To create the local app bundle:
+To create and open a debug app bundle:
 
 ```sh
 bash BuildSupport/build-app.sh
 open .build/PathShelf.app
 ```
 
-The generated bundle is ad-hoc signed for local validation. It is not a
-Developer ID-signed or notarized public artifact. See `docs/RELEASING.md` before
-distributing a binary.
+See `docs/RELEASING.md` before distributing any binary.
 
 ## Test
 
@@ -190,7 +313,7 @@ reporting, and baseline GitHub Actions hardening.
 ## Known Limits
 
 - Full Finder replacement is not the goal.
-- v0.1.0 is source-only; no Developer ID-signed or notarized app binary is
+- v0.2.0 is source-only; no Developer ID-signed or notarized app binary is
   provided.
 - Hardware battery validation and the 10-minute release idle audit must be run
   on target hardware before making binary performance or battery claims.
