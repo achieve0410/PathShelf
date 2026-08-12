@@ -10,7 +10,7 @@ The app is intentionally local-only: no telemetry, no accounts, no update checks
 
 ## Project Status
 
-PathShelf v0.2.0 is the current public **source-only checkpoint release**.
+PathShelf v0.2.1 is the current public **source-only checkpoint release**.
 GitHub provides source archives, while users build and run the app locally.
 No prebuilt, Developer ID-signed, or notarized app binary is included.
 
@@ -109,7 +109,7 @@ PathShelf does not currently provide a downloadable `.dmg` or prebuilt `.app`.
 The `Source code (zip)` and `Source code (tar.gz)` files on the GitHub Release
 page are source archives, not directly installable applications.
 
-Use the tagged `v0.2.0` source and build the app locally.
+Use the tagged `v0.2.1` source and build the app locally.
 
 ### 1. Install Apple's command-line tools
 
@@ -130,17 +130,17 @@ swift --version
 Homebrew and `ripgrep` are not required to build or use PathShelf. They are
 only needed to run the repository's complete test and audit suite.
 
-### 2. Download the v0.2.0 source
+### 2. Download the v0.2.1 source
 
 Recommended: clone the tagged release with Git:
 
 ```sh
-git clone --branch v0.2.0 --depth 1 https://github.com/achieve0410/PathShelf.git
+git clone --branch v0.2.1 --depth 1 https://github.com/achieve0410/PathShelf.git
 cd PathShelf
 ```
 
 Alternatively, download **Source code (zip)** from the
-[PathShelf v0.2.0 Release](https://github.com/achieve0410/PathShelf/releases/tag/v0.2.0),
+[PathShelf v0.2.1 Release](https://github.com/achieve0410/PathShelf/releases/tag/v0.2.1),
 extract it, open Terminal, type `cd ` including the trailing space, drag the
 extracted folder into Terminal, and press Return.
 
@@ -313,7 +313,7 @@ reporting, and baseline GitHub Actions hardening.
 ## Known Limits
 
 - Full Finder replacement is not the goal.
-- v0.2.0 is source-only; no Developer ID-signed or notarized app binary is
+- v0.2.1 is source-only; no Developer ID-signed or notarized app binary is
   provided.
 - Hardware battery validation and the 10-minute release idle audit must be run
   on target hardware before making binary performance or battery claims.
