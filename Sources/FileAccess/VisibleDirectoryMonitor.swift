@@ -53,7 +53,7 @@ public final class VisibleDirectoryMonitor: @unchecked Sendable {
     private var stream: (any DirectoryEventStream)?
     private var generation = 0
     private var isActive = false
-    private var deliveredEventKeys = Set<String>()
+    private var pendingEventKeys = Set<String>()
 
     public init(
         source: DirectoryEventSource = .live,
@@ -85,7 +85,7 @@ public final class VisibleDirectoryMonitor: @unchecked Sendable {
         generation += 1
         nextGeneration = generation
         isActive = true
-        deliveredEventKeys.removeAll()
+        pendingEventKeys.removeAll()
         lock.unlock()
 
         oldStream?.stop()
@@ -107,7 +107,7 @@ public final class VisibleDirectoryMonitor: @unchecked Sendable {
         stream = nil
         let wasActive = isActive
         isActive = false
-        deliveredEventKeys.removeAll()
+        pendingEventKeys.removeAll()
         lock.unlock()
 
         if wasActive || oldStream != nil {
@@ -134,7 +134,7 @@ public final class VisibleDirectoryMonitor: @unchecked Sendable {
         diagnostics.callbackArrived(active: lifecycleActive, stale: lifecycleActive && generationMatches == false)
         if lifecycleActive && generationMatches {
             let key = "\(eventGeneration):\(event.url.path)"
-            shouldDeliver = deliveredEventKeys.insert(key).inserted
+            shouldDeliver = pendingEventKeys.insert(key).inserted
         } else {
             shouldDeliver = false
         }
@@ -144,9 +144,22 @@ public final class VisibleDirectoryMonitor: @unchecked Sendable {
             return
         }
 
-        Task { @MainActor in
+        Task { @MainActor [weak self] in
             onEvent(eventGeneration, event)
+            self?.finishDelivery(
+                eventGeneration: eventGeneration,
+                event: event
+            )
         }
+    }
+
+    private func finishDelivery(
+        eventGeneration: Int,
+        event: DirectoryEvent
+    ) {
+        lock.lock()
+        pendingEventKeys.remove("\(eventGeneration):\(event.url.path)")
+        lock.unlock()
     }
 }
 

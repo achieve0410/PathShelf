@@ -379,6 +379,10 @@ final class PathShelfApp: NSObject, NSApplicationDelegate, NSMenuItemValidation 
             fixtureURL: fixtureURL,
             captureDirectoryURL: filterCaptureDirectoryURL
         ) ?? .unavailable
+        let visibleDirectoryRefreshProbe =
+            await panelController?.runVisibleDirectoryRefreshProbe(
+                fixtureURL: fixtureURL
+            ) ?? .unavailable
         let pathBarBoundaryProbe = await panelController?.runPathBarBoundaryProbe(
             fixtureURL: fixtureURL,
             captureDirectoryURL: filterCaptureDirectoryURL
@@ -445,6 +449,14 @@ final class PathShelfApp: NSObject, NSApplicationDelegate, NSMenuItemValidation 
             "SMOKE favoriteAccessibilityReady=\(favoriteUsabilityProbe.accessibilityReady)"
         )
         smokePrint("SMOKE loadingStateReady=\(filterProbe.loadingStateReady)")
+        smokePrint(
+            "SMOKE visibleDirectoryRefreshStable=\(visibleDirectoryRefreshProbe.passed)"
+        )
+        smokePrint(
+            "SMOKE visibleDirectoryRefresh=\(visibleDirectoryRefreshProbe.contentUpdated),"
+                + "\(visibleDirectoryRefreshProbe.loadingStable),"
+                + "\(visibleDirectoryRefreshProbe.watcherStable)"
+        )
         smokePrint("SMOKE filterNarrowsItems=\(filterProbe.narrowsItems)")
         smokePrint("SMOKE filterNoResultsReady=\(filterProbe.showsNoResults)")
         smokePrint("SMOKE filterClearRestores=\(filterProbe.clearsFilter)")
@@ -853,6 +865,14 @@ final class FloatingPanelController {
             preserved: preserved,
             captureReady: captureReady
         )
+    }
+
+    func runVisibleDirectoryRefreshProbe(
+        fixtureURL: URL
+    ) async -> VisibleDirectoryRefreshProbeResult {
+        await contentView?.runVisibleDirectoryRefreshProbe(
+            fixtureURL: fixtureURL
+        ) ?? .unavailable
     }
 
     func runFavoriteUsabilityProbe(

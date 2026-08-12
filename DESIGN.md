@@ -75,7 +75,9 @@
 
 ## Interaction states
 
-- Loading: retain the panel structure while enumeration completes
+- Loading: retain the panel structure while user-initiated navigation
+  enumerates; filesystem-event refreshes keep the current content visible,
+  update it in place, and must not restart the watcher or flash `Loading…`
 - Empty: show a centered folder symbol and `This folder is empty`; keep the concise `Empty folder` status in the bottom bar
 - Filtering: filter the already loaded current directory by locale-aware, case-insensitive filename matching; retain the active query across refreshes of the same directory and clear it when navigation changes location
 - No results: show a centered magnifying-glass symbol, `No matching items`, and a concise query-specific detail; keep `0 of n items` in the bottom bar
