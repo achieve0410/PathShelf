@@ -6,6 +6,12 @@ releases.
 
 ## Unreleased
 
+### Fixed
+
+- Kept visible directory contents stable during filesystem-event refreshes,
+  preventing repeated `Loading…` flashes in noisy or file-provider-backed
+  folders while continuing to reflect later changes at the same path.
+
 ## [0.2.0] - 2026-08-12
 
 ### Added

@@ -56,6 +56,22 @@ struct FavoriteUsabilityProbeResult {
     )
 }
 
+struct VisibleDirectoryRefreshProbeResult {
+    let contentUpdated: Bool
+    let loadingStable: Bool
+    let watcherStable: Bool
+
+    static let unavailable = VisibleDirectoryRefreshProbeResult(
+        contentUpdated: false,
+        loadingStable: false,
+        watcherStable: false
+    )
+
+    var passed: Bool {
+        contentUpdated && loadingStable && watcherStable
+    }
+}
+
 @MainActor
 final class PanelContentView: NSView, NSMenuItemValidation {
     static let favoriteGroupIconChoices: [(title: String, symbol: String)] = [
@@ -92,6 +108,7 @@ final class PanelContentView: NSView, NSMenuItemValidation {
     private(set) var toolbarControlCount = 0
     private(set) var loadingPresentationCount = 0
     var onLoadingPresented: (() -> Void)?
+    var onVisibleDirectoryRefreshed: (() -> Void)?
     private var loadTask: Task<Void, Never>?
     var favoriteActivationTask: Task<Void, Never>?
     var thumbnailTasks: [URL: Task<Void, Never>] = [:]
@@ -128,6 +145,9 @@ final class PanelContentView: NSView, NSMenuItemValidation {
             if isLoading && browserStateView.currentTitle == "Loading…" {
                 loadingPresentationCount += 1
                 onLoadingPresented?()
+            }
+            if isLoading == false {
+                onVisibleDirectoryRefreshed?()
             }
         }
     }
@@ -166,6 +186,19 @@ final class PanelContentView: NSView, NSMenuItemValidation {
         super.init(frame: frameRect)
         focusView.contentView = self
         setup()
+        model.onLoadingStateChange = { [weak self] isLoading in
+            guard let self else {
+                return
+            }
+            refreshTables()
+            if isLoading && browserStateView.currentTitle == "Loading…" {
+                loadingPresentationCount += 1
+                onLoadingPresented?()
+            }
+            if isLoading == false {
+                onVisibleDirectoryRefreshed?()
+            }
+        }
     }
 
     var snapshot: BrowserSnapshot {
@@ -329,6 +362,66 @@ final class PanelContentView: NSView, NSMenuItemValidation {
             && model.filterQuery == "inside"
             && pathControl.url == childURL.standardizedFileURL
             && fileTable.numberOfRows == 1
+    }
+
+    func runVisibleDirectoryRefreshProbe(
+        fixtureURL: URL
+    ) async -> VisibleDirectoryRefreshProbeResult {
+        await model.navigateToPathBarLocation(fixtureURL)
+        model.setFilterQuery("")
+        refreshTablesAndThumbnails()
+
+        let loadingCount = loadingPresentationCount
+        let watcherStartCount =
+            model.snapshot.lifecycleDiagnostics.visibleDirectoryObserverStartCount
+        var eventReceived = true
+        var expectedNames = Set(model.items.map(\.name))
+        for index in 1...2 {
+            let eventFileURL = fixtureURL.appendingPathComponent(
+                "live-refresh-\(index)-\(UUID().uuidString).txt"
+            )
+            expectedNames.insert(eventFileURL.lastPathComponent)
+            let signal = AsyncStream<Void>.makeStream()
+            onVisibleDirectoryRefreshed = {
+                signal.continuation.yield()
+                signal.continuation.finish()
+            }
+            do {
+                try Data("refresh".utf8).write(to: eventFileURL)
+            } catch {
+                signal.continuation.finish()
+                return .unavailable
+            }
+            let received = await withTaskGroup(of: Bool.self) { group in
+                group.addTask {
+                    for await _ in signal.stream {
+                        return true
+                    }
+                    return false
+                }
+                group.addTask {
+                    try? await Task.sleep(for: .seconds(2))
+                    return false
+                }
+                let result = await group.next() ?? false
+                group.cancelAll()
+                return result
+            }
+            signal.continuation.finish()
+            eventReceived = eventReceived && received
+        }
+        onVisibleDirectoryRefreshed = nil
+        let snapshot = model.snapshot
+        return VisibleDirectoryRefreshProbeResult(
+            contentUpdated: eventReceived
+                && Set(snapshot.itemNames).isSuperset(of: expectedNames)
+                && fileTable.numberOfRows == snapshot.itemNames.count,
+            loadingStable: model.isLoading == false
+                && loadingPresentationCount == loadingCount,
+            watcherStable:
+                snapshot.lifecycleDiagnostics.visibleDirectoryObserverStartCount
+                    == watcherStartCount
+        )
     }
 
     func runFavoriteUsabilityProbe(

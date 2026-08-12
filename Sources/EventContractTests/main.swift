@@ -10,6 +10,7 @@ struct EventContractTests {
             ("visible directory monitor coalesces duplicate burst callbacks", testVisibleMonitorBurstCoalescing),
             ("visible directory monitor ignores stale generation callbacks", testVisibleMonitorIgnoresStaleCallbacks),
             ("visible directory monitor records post-close callbacks without UI mutation", testVisibleMonitorPostCloseCallback),
+            ("visible directory refresh keeps content visible and watcher stable", testVisibleDirectoryRefreshKeepsContentVisible),
             ("volume observer starts stops and ignores post-close notifications", testVolumeObserverLifecycle),
             ("external state maps iCloud placeholder without app download ownership", testICloudPlaceholderMapping),
             ("external state maps unavailable network mount distinctly", testUnavailableNetworkMountMapping),
@@ -121,6 +122,94 @@ struct EventContractTests {
         try expect(delivered.withValue { $0 } == 0)
         try expect(diagnostics.snapshot.postCloseCallbackCount == 1)
         try expect(diagnostics.snapshot.uiMutationCount == 0)
+    }
+
+    @MainActor
+    private static func testVisibleDirectoryRefreshKeepsContentVisible() async throws {
+        let fixture = try TemporaryDirectory()
+        try Data("alpha".utf8).write(
+            to: fixture.url.appendingPathComponent("alpha.txt")
+        )
+        let source = TestDirectoryEventSource()
+        let diagnostics = LifecycleDiagnostics()
+        let stored = LockedBox<[SavedLocation]>([])
+        let model = makeModel(
+            home: fixture.url,
+            stored: stored,
+            bookmarkService: SecurityScopedBookmarkService(),
+            diagnostics: diagnostics,
+            directorySource: source.source
+        )
+        var loadingTransitions: [Bool] = []
+        var contentRefreshCount = 0
+        let firstSignal = AsyncStream<Void>.makeStream()
+
+        await model.loadInitialState()
+        model.startLifecycleMonitoring()
+        model.onLoadingStateChange = {
+            loadingTransitions.append($0)
+            guard $0 == false else {
+                return
+            }
+            contentRefreshCount += 1
+            firstSignal.continuation.yield()
+            firstSignal.continuation.finish()
+        }
+        try Data("beta".utf8).write(
+            to: fixture.url.appendingPathComponent("beta.txt")
+        )
+
+        source.streams[0].emit(fixture.url)
+        let firstRefreshReceived = await waitForSignal(firstSignal.stream)
+        try expect(
+            firstRefreshReceived,
+            "first filesystem refresh signal should arrive"
+        )
+
+        try expect(
+            model.items.map(\.name) == ["alpha.txt", "beta.txt"],
+            "filesystem refresh should enumerate the changed directory"
+        )
+        try expect(
+            loadingTransitions == [false],
+            "filesystem refresh should keep the current directory visible"
+        )
+        try expect(
+            source.streams.count == 1,
+            "same-directory refresh should not replace its event stream"
+        )
+        try expect(
+            contentRefreshCount == 1,
+            "filesystem refresh should notify the visible AppKit content once"
+        )
+
+        try Data("gamma".utf8).write(
+            to: fixture.url.appendingPathComponent("gamma.txt")
+        )
+        let secondSignal = AsyncStream<Void>.makeStream()
+        model.onLoadingStateChange = {
+            loadingTransitions.append($0)
+            guard $0 == false else {
+                return
+            }
+            contentRefreshCount += 1
+            secondSignal.continuation.yield()
+            secondSignal.continuation.finish()
+        }
+        source.streams[0].emit(fixture.url)
+        let secondRefreshReceived = await waitForSignal(secondSignal.stream)
+        try expect(
+            secondRefreshReceived,
+            "later changes at the same path should still refresh"
+        )
+        try expect(
+            model.items.map(\.name) == ["alpha.txt", "beta.txt", "gamma.txt"]
+        )
+        try expect(loadingTransitions == [false, false])
+        try expect(source.streams.count == 1)
+        try expect(contentRefreshCount == 2)
+        try expect(diagnostics.snapshot.visibleDirectoryObserverStartCount == 1)
+        model.teardown()
     }
 
     private static func testVolumeObserverLifecycle() async throws {
@@ -565,7 +654,24 @@ struct EventContractTests {
         await model.loadInitialState()
         await model.startLifecycleMonitoring()
         await model.setActiveThumbnailCount(3)
+        let refreshCount = LockedBox(0)
+        try await runMain {
+            model.onLoadingStateChange = { loading in
+                guard loading == false else {
+                    return
+                }
+                refreshCount.withValue { $0 += 1 }
+            }
+        }
+        let stoppedStream = directorySource.streams[0]
         await model.teardown()
+        stoppedStream.emit(
+            URL(
+                fileURLWithPath: FileManager.default.currentDirectoryPath,
+                isDirectory: true
+            )
+        )
+        await pumpMainActor()
 
         let snapshot = try await runMain { model.snapshot.lifecycleDiagnostics }
         try expect(snapshot.activeVisibleDirectoryObserverCount == 0)
@@ -576,6 +682,7 @@ struct EventContractTests {
         try expect(afterThumbnailCancel.activeThumbnailCount == 0)
         try expect(afterThumbnailCancel.timerCount == 0)
         try expect(afterThumbnailCancel.animationCount == 0)
+        try expect(refreshCount.withValue { $0 } == 0)
     }
 
     private static func testLiveFSEventsCreationProof() async throws {
@@ -593,6 +700,7 @@ struct EventContractTests {
 
     @MainActor
     private static func makeModel(
+        home: URL? = nil,
         stored: LockedBox<[SavedLocation]>,
         bookmarkService: SecurityScopedBookmarkService,
         diagnostics: LifecycleDiagnostics = LifecycleDiagnostics(),
@@ -611,8 +719,11 @@ struct EventContractTests {
         return FileBrowserModel(
             environment: FileBrowserEnvironment(
                 homeDirectory: {
-                    URL(fileURLWithPath: FileManager.default.currentDirectoryPath, isDirectory: true)
-                        .appendingPathComponent(".build/test-tmp", isDirectory: true)
+                    home ?? URL(
+                        fileURLWithPath: FileManager.default.currentDirectoryPath,
+                        isDirectory: true
+                    )
+                    .appendingPathComponent(".build/test-tmp", isDirectory: true)
                 },
                 enumerate: { url in try await DirectoryEnumerator().enumerate(url) },
                 loadSavedLocations: { stored.withValue { $0 } },
@@ -798,5 +909,23 @@ private final class LockedBox<Value>: @unchecked Sendable {
         lock.lock()
         defer { lock.unlock() }
         return try body(&value)
+    }
+}
+
+private func waitForSignal(_ stream: AsyncStream<Void>) async -> Bool {
+    await withTaskGroup(of: Bool.self) { group in
+        group.addTask {
+            for await _ in stream {
+                return true
+            }
+            return false
+        }
+        group.addTask {
+            try? await Task.sleep(for: .seconds(2))
+            return false
+        }
+        let result = await group.next() ?? false
+        group.cancelAll()
+        return result
     }
 }

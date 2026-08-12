@@ -834,9 +834,38 @@ public final class FileBrowserModel {
         directoryRefreshInFlight = true
         repeat {
             pendingDirectoryEvent = false
-            await reload()
+            await refreshVisibleDirectory()
         } while pendingDirectoryEvent
         directoryRefreshInFlight = false
+    }
+
+    private func refreshVisibleDirectory() async {
+        let directoryURL = currentDirectoryURL
+        let selectedURL = selectedItem?.url
+        generation += 1
+        let requestGeneration = generation
+
+        do {
+            let result = try await environment.enumerate(directoryURL)
+            guard requestGeneration == generation,
+                  currentDirectoryURL == directoryURL else {
+                return
+            }
+            directoryItems = sortOrder.sorted(result.items)
+            updateVisibleItems(preserving: selectedURL)
+            lastErrorMessage = nil
+            onLoadingStateChange?(false)
+        } catch {
+            guard requestGeneration == generation,
+                  currentDirectoryURL == directoryURL else {
+                return
+            }
+            directoryItems = []
+            items = []
+            availability = .unavailable(.unavailable, directoryURL.path)
+            lastErrorMessage = "Could not open this folder."
+            onLoadingStateChange?(false)
+        }
     }
 
     private func handleVolumeEvent(_ event: VolumeEvent) async {
