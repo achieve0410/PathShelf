@@ -76,7 +76,7 @@ jobs:
           PATHSHELF_PACKAGE_EXISTING_APP: "1"
         run: bash BuildSupport/package-release.sh
       - name: Upload notarized candidate
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
           name: PathShelf-macos-arm64-notarized
           path: |
